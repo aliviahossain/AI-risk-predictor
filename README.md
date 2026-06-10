@@ -98,6 +98,7 @@ Click the **+** button in the terminal panel to open a second terminal, then:
 
 ```powershell
 cd "C:\Users\Alivia Hossain\Desktop\AI-risk-predictor\AI-risk-predictor\frontend"
+npm install
 npm start
 ```
 
