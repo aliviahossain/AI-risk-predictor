@@ -5,6 +5,7 @@
 # =============================================================================
 
 args <- commandArgs(trailingOnly=TRUE)
+set.seed(42)
 if (length(args) < 2) { cat("Usage: Rscript deg_pipeline.R <GEO_ID> <output_dir>\n"); quit(status=1) }
 geo_id     <- toupper(trimws(args[1]))
 output_dir <- args[2]
