@@ -81,9 +81,9 @@ Open a terminal: **Terminal → New Terminal** (or `Ctrl + `` ` ``)
 ### Terminal 1 — Start the Backend
 
 ```powershell
-cd "C:\Users\Alivia Hossain\Desktop\AI-risk-predictor\AI-risk-predictor\backend"
+cd "C:\Users\Alivia Hossain\Desktop\deg\AI-risk-predictor"
 pip install fastapi uvicorn python-multipart
-uvicorn main:app --reload
+uvicorn backend.main:app --reload
 ```
 
 ✅ You should see:
