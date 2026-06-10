@@ -104,3 +104,91 @@
   background: #eef2ff; border: 1px solid #c7d2fe;
   padding: 3px 10px; border-radius: 6px;
 }
+
+/* ── Mode Toggle ── */
+.up-toggle {
+  display: flex; gap: 4px;
+  background: #f3f4f6; border-radius: 12px;
+  padding: 4px; margin-bottom: 28px; width: 100%;
+}
+.up-tog-btn {
+  flex: 1; padding: 10px; border: none; border-radius: 9px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: transparent; color: #6b7280;
+  transition: all 0.2s;
+}
+.up-tog-btn.active {
+  background: #fff; color: #4f46e5;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+/* ── GEO Mode ── */
+.up-geo { width: 100%; }
+.up-geo-box {
+  background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 16px; padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.up-geo-label {
+  display: block; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: #9ca3af; margin-bottom: 10px;
+}
+.up-geo-row { display: flex; gap: 10px; margin-bottom: 12px; }
+.up-geo-input {
+  flex: 1; padding: 10px 16px;
+  border: 1.5px solid #e5e7eb; border-radius: 10px;
+  font-size: 15px; font-family: 'JetBrains Mono', monospace;
+  color: #1a1523; outline: none; transition: border 0.15s;
+}
+.up-geo-input:focus { border-color: #6366f1; }
+.up-geo-run {
+  padding: 10px 22px; background: #6366f1; color: #fff;
+  border: none; border-radius: 10px; font-size: 13px;
+  font-weight: 700; cursor: pointer;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  white-space: nowrap; transition: background 0.15s;
+}
+.up-geo-run:hover:not(:disabled) { background: #4f46e5; }
+.up-geo-run:disabled { background: #d1d5db; cursor: not-allowed; }
+.up-geo-hint { font-size: 12px; color: #9ca3af; line-height: 1.6; }
+
+/* ── Progress ── */
+.up-progress {
+  background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 16px; padding: 20px;
+}
+.up-progress-title {
+  font-weight: 700; font-size: 14px; color: #1a1523;
+  margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+}
+.up-status-badge {
+  font-size: 11px; padding: 3px 10px; border-radius: 99px; font-weight: 700;
+}
+.up-status-badge.running { background: #fef3c7; color: #92400e; }
+.up-status-badge.done    { background: #d1fae5; color: #065f46; }
+.up-status-badge.error   { background: #fee2e2; color: #991b1b; }
+
+.up-steps { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.up-step  { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.up-step-icon { width: 20px; text-align: center; font-size: 12px; }
+.up-step.done    .up-step-icon  { color: #16a34a; }
+.up-step.current .up-step-icon  { color: #f59e0b; }
+.up-step.pending .up-step-icon  { color: #d1d5db; }
+.up-step.done    .up-step-label { color: #6b7280; text-decoration: line-through; }
+.up-step.current .up-step-label { color: #1a1523; font-weight: 700; }
+.up-step.pending .up-step-label { color: #d1d5db; }
+
+/* ── Log ── */
+.up-log {
+  background: #0a0f1e; border-radius: 10px;
+  padding: 12px 14px; max-height: 180px; overflow-y: auto;
+}
+.up-log-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: #64748b; line-height: 1.7;
+}
+.up-log-line.step { color: #38bdf8; font-weight: 700; }
+.up-log-line.err  { color: #f87171; }

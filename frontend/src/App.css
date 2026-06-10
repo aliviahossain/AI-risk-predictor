@@ -2,6 +2,36 @@
   text-align: center;
 }
 
+.app-modebar {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 20px auto 0;
+  max-width: 720px;
+  padding: 0 16px;
+}
+
+.app-modebtn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.app-modebtn:hover {
+  border-color: #6366f1;
+}
+
+.app-modebtn.active {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #ffffff;
+}
+
 .App-logo {
   height: 40vmin;
   pointer-events: none;
