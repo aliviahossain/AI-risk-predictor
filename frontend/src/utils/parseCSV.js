@@ -1,10 +1,10 @@
-// parseCSV.js — safe for large datasets, no spread operator
-
 export function parseCSV(text) {
-  const lines = text.trim().split("\n");
+  if (!text || typeof text !== "string") return [];
+
+  const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(",").map((h) => h.replace(/"/g, "").trim());
+  const rawHeaders = lines[0].split(",").map((h) => h.replace(/"/g, "").trim());
   const rows = [];
 
   for (let i = 1; i < lines.length; i++) {
@@ -12,106 +12,180 @@ export function parseCSV(text) {
     if (values.length < 2) continue;
 
     const row = {};
-    headers.forEach((h, idx) => {
-      row[h] = (values[idx] || "").replace(/"/g, "").trim();
+    rawHeaders.forEach((h, idx) => {
+      row[h] = values[idx] !== undefined ? values[idx].replace(/"/g, "").trim() : "";
     });
 
     const gene = row["GeneSymbol"];
     if (!gene || gene === "NA" || gene === "") continue;
 
     const logFC = parseFloat(row["logFC"]);
-    const adjP  = parseFloat(row["adj.P.Val"]);
-    if (isNaN(logFC) || isNaN(adjP)) continue;
+    // FIX: Use nullish coalescing correctly — row[key] can be "" (falsy but valid),
+    // so prefer explicit undefined check rather than ?? on the parsed float.
+    const adjP = parseFloat(row["adj.P.Val"] !== undefined && row["adj.P.Val"] !== ""
+      ? row["adj.P.Val"]
+      : row["padj"] ?? "");
+    const pVal = parseFloat(row["P.Value"] !== undefined && row["P.Value"] !== ""
+      ? row["P.Value"]
+      : row["pvalue"] ?? "");
+    const ave  = parseFloat(row["AveExpr"] !== undefined && row["AveExpr"] !== ""
+      ? row["AveExpr"]
+      : row["baseMean"] ?? "");
+    const t    = parseFloat(row["t"] !== undefined && row["t"] !== ""
+      ? row["t"]
+      : row["stat"] ?? "");
+    const b    = parseFloat(row["B"] ?? "");
 
-    const pVal = parseFloat(row["P.Value"]);
-    const ave  = parseFloat(row["AveExpr"]);
-    const t    = parseFloat(row["t"]);
-    const b    = parseFloat(row["B"]);
+    if (!isFinite(logFC) || !isFinite(adjP)) continue;
+
+    // FIX: adjPVal must be clamped to [0,1]; negative or >1 values are invalid
+    if (adjP < 0 || adjP > 1) continue;
 
     rows.push({
       id:         i,
       geneSymbol: gene,
       logFC,
-      aveExpr:  isNaN(ave)  ? 0 : ave,
-      tStat:    isNaN(t)    ? 0 : t,
-      pValue:   isNaN(pVal) ? 1 : pVal,
-      adjPVal:  adjP,
-      bStat:    isNaN(b)    ? 0 : b,
+      aveExpr:    isFinite(ave) ? ave : 0,
+      tStat:      isFinite(t)   ? t   : 0,
+      pValue:     isFinite(pVal) && pVal > 0 ? pVal : 1,
+      adjPVal:    adjP,
+      bStat:      isFinite(b)   ? b   : 0,
     });
   }
   return rows;
 }
 
+/** RFC-4180-aware CSV line splitter (handles quoted commas and escaped quotes). */
 function splitCSVLine(line) {
   const result = [];
-  let current = "", inQuotes = false;
+  let current = "";
+  let inQuotes = false;
+
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '"') { inQuotes = !inQuotes; }
-    else if (ch === "," && !inQuotes) { result.push(current); current = ""; }
-    else { current += ch; }
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
   }
   result.push(current);
   return result;
 }
 
-export function classifyGene(gene, fcThreshold = 0.1, pThreshold = 0.05) {
-  if (gene.adjPVal > pThreshold)   return "ns";
-  if (gene.logFC  >=  fcThreshold) return "up";
-  if (gene.logFC  <= -fcThreshold) return "down";
+/**
+ * Classify a single gene as "up", "down", or "ns".
+ * Uses adj.P.Val for significance (not raw P.Value).
+ */
+// FIX: Added null guard for gene object
+export function classifyGene(gene, fcThreshold = 1.0, pThreshold = 0.05) {
+  if (!gene || !isFinite(gene.adjPVal) || gene.adjPVal > pThreshold) return "ns";
+  if (gene.logFC >=  fcThreshold) return "up";
+  if (gene.logFC <= -fcThreshold) return "down";
   return "ns";
 }
 
-export function getSummary(genes, fcThreshold = 0.1, pThreshold = 0.05) {
+/**
+ * Return aggregate counts for up/down/ns genes.
+ */
+// FIX: Added Array.isArray guard to prevent crash on non-array input
+export function getSummary(genes, fcThreshold = 1.0, pThreshold = 0.05) {
+  if (!Array.isArray(genes)) return { total: 0, up: 0, down: 0, ns: 0 };
   let up = 0, down = 0;
+
   for (let i = 0; i < genes.length; i++) {
-    const t = classifyGene(genes[i], fcThreshold, pThreshold);
-    if (t === "up")   up++;
-    if (t === "down") down++;
+    const cls = classifyGene(genes[i], fcThreshold, pThreshold);
+    if (cls === "up")   up++;
+    else if (cls === "down") down++;
   }
+
   return { total: genes.length, up, down, ns: genes.length - up - down };
 }
 
+/**
+ * Compute display ranges and suggest sensible default thresholds.
+ */
 export function getDataRange(genes) {
   if (!genes || genes.length === 0) {
-    return { fcMin:0, fcMax:0, fcAbsMax:1, negLogMax:5, suggestedFC:0.1, suggestedP:0.05 };
+    return { fcMin: -1, fcMax: 1, fcAbsMax: 1, negLogMax: 5,
+             suggestedFC: 1.0, suggestedP: 0.05 };
   }
 
-  let fcMin = genes[0].logFC;
-  let fcMax = genes[0].logFC;
-  let fcAbsMax  = 0;
-  let negLogMax = 0;
-  const absArr  = [];
+  let fcMin = Infinity, fcMax = -Infinity, fcAbsMax = 0, negLogMax = 0;
+  const absValues  = [];
+  const adjPValues = [];
 
   for (let i = 0; i < genes.length; i++) {
-    const g  = genes[i];
-    const fc = g.logFC;
-    const p  = g.adjPVal;
+    const { logFC, adjPVal } = genes[i];
 
-    if (!isFinite(fc)) continue;
-    if (fc < fcMin) fcMin = fc;
-    if (fc > fcMax) fcMax = fc;
-    const absFC = fc < 0 ? -fc : fc;
+    if (!isFinite(logFC)) continue;
+
+    if (logFC < fcMin) fcMin = logFC;
+    if (logFC > fcMax) fcMax = logFC;
+
+    const absFC = logFC < 0 ? -logFC : logFC;
     if (absFC > fcAbsMax) fcAbsMax = absFC;
-    absArr.push(absFC);
+    absValues.push(absFC);
 
-    if (p > 0 && isFinite(p)) {
-      const nl = -Math.log10(p);
+    if (isFinite(adjPVal) && adjPVal > 0) {
+      const nl = -Math.log10(adjPVal);
       if (nl > negLogMax) negLogMax = nl;
+      adjPValues.push(adjPVal);
     }
   }
 
-  // FC threshold = 20th percentile of abs logFC values
-  absArr.sort((a, b) => a - b);
-  const p20idx      = Math.floor(absArr.length * 0.20);
-  const suggestedFC = absArr.length > 0
-    ? Math.max(0.01, parseFloat(absArr[p20idx].toFixed(3)))
-    : 0.1;
+  if (!isFinite(fcMin)) fcMin = -1;
+  if (!isFinite(fcMax)) fcMax = 1;
 
-  // ── P threshold is ALWAYS fixed at 0.05 ──────────────────────────────────
-  // Never auto-calculate this — 0.05 is the universal scientific standard
-  // A high adj.P dataset just means fewer significant genes, which is correct
-  const suggestedP = 0.05;
+  // FIX: Clone arrays before sorting to avoid in-place mutation side-effects
+  const sortedAbs   = [...absValues].sort((a, b) => a - b);
+  const p10idx      = Math.max(0, Math.floor(sortedAbs.length * 0.10));
+  const rawFC       = sortedAbs.length > 0 ? sortedAbs[p10idx] : 1.0;
+  const suggestedFC = parseFloat(Math.max(0.5, rawFC).toFixed(2));
+
+  const sortedAdjP   = [...adjPValues].sort((a, b) => a - b);
+  const countBelow05 = sortedAdjP.filter((p) => p <= 0.05).length;
+  const suggestedP   =
+    countBelow05 > 0
+      ? 0.05
+      : sortedAdjP.length > 0
+        ? parseFloat(
+            Math.min(
+              sortedAdjP[Math.floor(sortedAdjP.length * 0.10)],
+              0.99
+            ).toFixed(4)
+          )
+        : 0.05;
 
   return { fcMin, fcMax, fcAbsMax, negLogMax, suggestedFC, suggestedP };
 }
+
+/** Lightweight memoisation wrapper. */
+export function memoize(fn) {
+  let lastArgs = null;
+  let lastResult = null;
+
+  return function (...args) {
+    if (
+      lastArgs !== null &&
+      args.length === lastArgs.length &&
+      args.every((a, i) => a === lastArgs[i])
+    ) {
+      return lastResult;
+    }
+    lastResult = fn(...args);
+    lastArgs = args;
+    return lastResult;
+  };
+}
+
+export const memoGetSummary   = memoize(getSummary);
+export const memoGetDataRange = memoize(getDataRange);

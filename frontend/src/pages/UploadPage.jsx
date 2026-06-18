@@ -21,8 +21,16 @@ const STEPS = [
   "Generating heatmap","Finalizing","Complete",
 ];
 
+const RAW_STEPS = [
+  "Inspecting uploaded file","Selecting expression file","Reading count matrix",
+  "Assigning groups","Running DGE (voom + limma)","Exporting results",
+  "Generating heatmap","Finalizing","Complete",
+];
+
+const RAW_ACCEPT = ".csv,.tsv,.txt,.gz,.tar,.tgz";
+
 export default function UploadPage({ onDataLoaded }) {
-  const [mode,      setMode]      = useState("csv");
+  const [mode,      setMode]      = useState("csv"); // "csv" | "geo" | "raw"
   const [dragging,  setDragging]  = useState(false);
   const [file,      setFile]      = useState(null);
   const [geoId,     setGeoId]     = useState("");
@@ -33,6 +41,14 @@ export default function UploadPage({ onDataLoaded }) {
   const [jobLog,    setJobLog]    = useState([]);
   const [jobStatus, setJobStatus] = useState("");
   const [filterTag, setFilterTag] = useState("All");
+
+  // Raw-upload mode state
+  const [rawFile,    setRawFile]    = useState(null);
+  const [rawDragging, setRawDragging] = useState(false);
+
+  const resetJobState = () => {
+    setJobId(null); setJobStep(""); setJobLog([]); setJobStatus("");
+  };
 
   const processFile = (f) => {
     if (!f) return;
@@ -63,6 +79,44 @@ export default function UploadPage({ onDataLoaded }) {
     } catch (e) { setError(e.message); setLoading(false); setJobStatus(""); }
   };
 
+  // Validate raw file extension client-side (mirrors backend ALLOWED_RAW_EXTENSIONS)
+  const isRawFileAllowed = (f) => {
+    const name = f.name.toLowerCase();
+    return [".csv",".tsv",".txt",".csv.gz",".tsv.gz",".txt.gz",".tar",".tar.gz",".tgz"]
+      .some(ext => name.endsWith(ext));
+  };
+
+  const processRawFile = (f) => {
+    if (!f) return;
+    if (!isRawFileAllowed(f)) {
+      setError("Unsupported file type. Accepted: .csv, .tsv, .txt (optionally .gz), or .tar/.tar.gz/.tgz");
+      return;
+    }
+    setRawFile(f);
+    setError("");
+  };
+
+  const runRawUploadPipeline = async () => {
+    if (!rawFile) { setError("Choose a file to upload first."); return; }
+    setError(""); setLoading(true);
+    setJobStep("Starting…"); setJobLog([]); setJobStatus("running"); setJobId(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", rawFile);
+
+      const res  = await fetch(`${API}/geo/upload-raw`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to start pipeline");
+
+      setGeoId(data.geo_id);
+      setJobId(data.job_id);
+      pollJob(data.job_id, data.geo_id);
+    } catch (e) {
+      setError(e.message); setLoading(false); setJobStatus("");
+    }
+  };
+
   const pollJob = (jid, gid) => {
     const iv = setInterval(async () => {
       try {
@@ -80,8 +134,14 @@ export default function UploadPage({ onDataLoaded }) {
     }, 2500);
   };
 
-  const stepIdx     = STEPS.indexOf(jobStep);
+  const activeSteps = mode === "raw" ? RAW_STEPS : STEPS;
+  const stepIdx     = activeSteps.indexOf(jobStep);
   const filteredGEO = filterTag === "All" ? GEO_SUGGESTIONS : GEO_SUGGESTIONS.filter(g => g.tag === filterTag);
+
+  const switchMode = (m) => {
+    setMode(m); setError("");
+    if (!loading) resetJobState();
+  };
 
   return (
     <div className="up-root">
@@ -95,11 +155,14 @@ export default function UploadPage({ onDataLoaded }) {
 
         {/* Mode toggle */}
         <div className="up-toggle">
-          <button className={`up-tog-btn ${mode==="csv"?"active":""}`} onClick={()=>{setMode("csv");setError("");}}>
+          <button className={`up-tog-btn ${mode==="csv"?"active":""}`} onClick={()=>switchMode("csv")}>
             📂 Upload CSV file
           </button>
-          <button className={`up-tog-btn ${mode==="geo"?"active":""}`} onClick={()=>{setMode("geo");setError("");}}>
+          <button className={`up-tog-btn ${mode==="geo"?"active":""}`} onClick={()=>switchMode("geo")}>
             🌐 Fetch from GEO
+          </button>
+          <button className={`up-tog-btn ${mode==="raw"?"active":""}`} onClick={()=>switchMode("raw")}>
+            🧬 Upload raw GEO file
           </button>
         </div>
 
@@ -189,32 +252,79 @@ export default function UploadPage({ onDataLoaded }) {
                 );
               })}
             </div>
+          </div>
+        )}
 
-            {/* Progress */}
-            {jobId && (
-              <div className="up-progress">
-                <div className="up-progress-header">
-                  <span className="up-progress-title">Pipeline — {geoId}</span>
-                  <span className={`up-status-pill ${jobStatus}`}>
-                    {jobStatus==="done"?"✓ Complete":jobStatus==="error"?"✗ Error":"⏳ Running"}
-                  </span>
+        {/* ── Raw GEO file upload mode ── */}
+        {mode === "raw" && (
+          <div className="up-csv-section">
+            <div
+              className={`up-zone ${rawDragging?"drag":""} ${rawFile&&!error?"ready":""}`}
+              onDragOver={(e)=>{e.preventDefault();setRawDragging(true);}}
+              onDragLeave={()=>setRawDragging(false)}
+              onDrop={(e)=>{e.preventDefault();setRawDragging(false);processRawFile(e.dataTransfer.files[0]);}}
+              onClick={()=>!loading && document.getElementById("fi-raw").click()}
+            >
+              <input id="fi-raw" type="file" accept={RAW_ACCEPT} style={{display:"none"}}
+                onChange={(e)=>processRawFile(e.target.files[0])} disabled={loading}/>
+              {rawFile && !error ? (
+                <div className="up-done">
+                  <div className="up-check">✓</div>
+                  <p className="up-fname">{rawFile.name}</p>
+                  <p className="up-change">{loading ? "Pipeline running…" : "Click to change file"}</p>
                 </div>
-                <div className="up-steps">
-                  {STEPS.map((s,i)=>(
-                    <div key={s} className={`up-step ${i<stepIdx?"done":i===stepIdx?"current":"pending"}`}>
-                      <span className="up-step-dot">{i<stepIdx?"✓":i===stepIdx?"◉":"○"}</span>
-                      <span className="up-step-lbl">{s}</span>
-                      {i===stepIdx&&<div className="up-step-pulse"/>}
-                    </div>
-                  ))}
+              ) : (
+                <>
+                  <div className="up-drop-icon">🧬</div>
+                  <p className="up-main">Drop a raw GEO file here</p>
+                  <p className="up-hint">Counts matrix, series matrix, or a GEO supplementary archive (.tar/.tar.gz/.tgz)</p>
+                  <div className="up-btn">Browse files</div>
+                </>
+              )}
+            </div>
+
+            <div className="up-cols">
+              <p className="up-cols-label">Supported file types</p>
+              <div className="up-cols-list">
+                {[".csv",".tsv",".txt",".csv.gz",".tsv.gz",".txt.gz",".tar",".tar.gz",".tgz"].map(c=><code key={c}>{c}</code>)}
+              </div>
+              <p className="up-geo-hint" style={{marginTop:"8px"}}>
+                The same limma/voom DGE pipeline runs automatically on whatever expression
+                data is detected inside your file — no need to know the GEO accession ID.
+              </p>
+            </div>
+
+            {rawFile && !loading && (
+              <button onClick={runRawUploadPipeline} disabled={loading} className="up-geo-run" style={{marginTop:"16px"}}>
+                ▶ Run DGE Analysis
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Progress (shared by GEO and raw-upload modes) */}
+        {(mode === "geo" || mode === "raw") && jobId && (
+          <div className="up-progress">
+            <div className="up-progress-header">
+              <span className="up-progress-title">Pipeline — {geoId}</span>
+              <span className={`up-status-pill ${jobStatus}`}>
+                {jobStatus==="done"?"✓ Complete":jobStatus==="error"?"✗ Error":"⏳ Running"}
+              </span>
+            </div>
+            <div className="up-steps">
+              {activeSteps.map((s,i)=>(
+                <div key={s} className={`up-step ${i<stepIdx?"done":i===stepIdx?"current":"pending"}`}>
+                  <span className="up-step-dot">{i<stepIdx?"✓":i===stepIdx?"◉":"○"}</span>
+                  <span className="up-step-lbl">{s}</span>
+                  {i===stepIdx&&<div className="up-step-pulse"/>}
                 </div>
-                {jobLog.length>0&&(
-                  <div className="up-log">
-                    {jobLog.slice(-12).map((line,i)=>(
-                      <div key={i} className={`up-log-line ${line.includes("ERROR")?"err":line.includes("STEP")?"step":""}`}>{line}</div>
-                    ))}
-                  </div>
-                )}
+              ))}
+            </div>
+            {jobLog.length>0&&(
+              <div className="up-log">
+                {jobLog.slice(-12).map((line,i)=>(
+                  <div key={i} className={`up-log-line ${line.includes("ERROR")?"err":line.includes("STEP")?"step":""}`}>{line}</div>
+                ))}
               </div>
             )}
           </div>
