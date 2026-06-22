@@ -3,7 +3,7 @@ import { classifyGene } from "../utils/parseCSV";
 
 const PAGE = 15;
 
-export default function GeneTable({ genes, fcThreshold=0.5, pThreshold=0.05 }) {
+export default function GeneTable({ genes, fcThreshold=0.5, pThreshold=0.05, pValueType="adj" }) {
   const [search,  setSearch]  = useState("");
   const [filter,  setFilter]  = useState("all");
   const [sortCol, setSortCol] = useState("adjPVal");
@@ -11,12 +11,12 @@ export default function GeneTable({ genes, fcThreshold=0.5, pThreshold=0.05 }) {
   const [page,    setPage]    = useState(1);
 
   const rows = useMemo(() => {
-    let r = genes.map(g => ({ ...g, type: classifyGene(g, fcThreshold, pThreshold) }));
+    let r = genes.map(g => ({ ...g, type: classifyGene(g, fcThreshold, pThreshold, pValueType) }));
     if (filter !== "all") r = r.filter(g => g.type === filter);
     if (search.trim())    r = r.filter(g => g.geneSymbol.toLowerCase().includes(search.toLowerCase()));
     r.sort((a,b) => sortDir === "asc" ? a[sortCol]-b[sortCol] : b[sortCol]-a[sortCol]);
     return r;
-  }, [genes, filter, search, sortCol, sortDir, fcThreshold, pThreshold]);
+  }, [genes, filter, search, sortCol, sortDir, fcThreshold, pThreshold, pValueType]);
 
   const totalPages = Math.ceil(rows.length / PAGE);
   const paged = rows.slice((page-1)*PAGE, page*PAGE);
@@ -93,7 +93,7 @@ export default function GeneTable({ genes, fcThreshold=0.5, pThreshold=0.05 }) {
                 <td style={{...td,color:g.logFC>0?"#ef4444":"#3b82f6",fontFamily:"'JetBrains Mono',monospace"}}>{g.logFC.toFixed(4)}</td>
                 <td style={{...td,fontFamily:"'JetBrains Mono',monospace"}}>{g.aveExpr.toFixed(4)}</td>
                 <td style={{...td,fontFamily:"'JetBrains Mono',monospace"}}>{g.pValue.toExponential(2)}</td>
-                <td style={{...td,color:g.adjPVal<pThreshold?"#16a34a":"#374151",fontFamily:"'JetBrains Mono',monospace"}}>{g.adjPVal.toExponential(2)}</td>
+                <td style={{...td,color:(pValueType==="raw"?g.pValue:g.adjPVal)<pThreshold?"#16a34a":"#374151",fontFamily:"'JetBrains Mono',monospace"}}>{g.adjPVal.toExponential(2)}</td>
                 <td style={{...td,fontFamily:"'JetBrains Mono',monospace"}}>{g.bStat.toFixed(3)}</td>
               </tr>
             ))}

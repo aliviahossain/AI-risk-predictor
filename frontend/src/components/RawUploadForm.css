@@ -1,0 +1,82 @@
+.raw-form { display:flex; flex-direction:column; gap:12px; width:100%; }
+
+.raw-dropzone {
+  border:2px dashed #d1d5db; border-radius:16px; padding:40px 24px;
+  text-align:center; cursor:pointer; background:#fff; transition:all 0.2s;
+}
+.raw-dropzone:hover,.raw-dropzone.drag { border-color:#6366f1; background:#faf5ff; box-shadow:0 0 0 4px rgba(99,102,241,0.08); }
+.raw-dropzone.ready { border-color:#22c55e; background:#f0fdf4; border-style:solid; }
+
+.raw-drop-icon  { font-size:36px; margin-bottom:10px; }
+.raw-drop-main  { font-size:15px; font-weight:700; color:#1a1523; margin-bottom:6px; }
+.raw-drop-hint  { font-size:12px; color:#9ca3af; margin-bottom:16px; }
+.raw-browse-btn { display:inline-block; background:#6366f1; color:#fff; padding:8px 20px; border-radius:8px; font-size:13px; font-weight:700; }
+
+.raw-file-ready { text-align:center; }
+.raw-check  { font-size:28px; color:#22c55e; }
+.raw-fname  { font-weight:700; color:#1a1523; font-size:14px; margin:6px 0 2px; }
+.raw-fsize  { font-size:11px; color:#9ca3af; }
+
+.raw-label-input {
+  width:100%; padding:10px 16px; border:1.5px solid #e5e7eb; border-radius:10px;
+  font-size:14px; font-family:'Plus Jakarta Sans',sans-serif; color:#1a1523;
+  outline:none; transition:border 0.15s;
+}
+.raw-label-input:focus { border-color:#6366f1; }
+
+.raw-submit-btn {
+  width:100%; padding:13px; background:#6366f1; color:#fff;
+  border:none; border-radius:12px; font-size:14px; font-weight:700;
+  cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif;
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  transition:background 0.15s;
+}
+.raw-submit-btn:hover:not(:disabled) { background:#4f46e5; }
+.raw-submit-btn:disabled { background:#d1d5db; cursor:not-allowed; }
+
+.raw-spin {
+  width:16px; height:16px; border:2px solid rgba(255,255,255,0.4);
+  border-top-color:#fff; border-radius:50%; animation:rspin 0.7s linear infinite;
+}
+@keyframes rspin { to { transform:rotate(360deg); } }
+
+/* Progress */
+.raw-progress {
+  background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:18px;
+}
+.raw-progress-header {
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:13px; font-weight:700; color:#1a1523; margin-bottom:14px;
+}
+.raw-pill { font-size:11px; font-weight:700; padding:3px 10px; border-radius:99px; }
+.raw-pill.running { background:#fef3c7; color:#92400e; }
+.raw-pill.done    { background:#d1fae5; color:#065f46; }
+.raw-pill.error   { background:#fee2e2; color:#991b1b; }
+
+.raw-steps { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; }
+.raw-step  { display:flex; align-items:center; gap:8px; font-size:12px; }
+.raw-step-dot { width:18px; text-align:center; font-size:11px; flex-shrink:0; }
+.raw-step.done    .raw-step-dot { color:#16a34a; }
+.raw-step.current .raw-step-dot { color:#f59e0b; }
+.raw-step.pending .raw-step-dot { color:#d1d5db; }
+.raw-step.done    .raw-step-lbl { color:#9ca3af; text-decoration:line-through; }
+.raw-step.current .raw-step-lbl { color:#1a1523; font-weight:700; }
+.raw-step.pending .raw-step-lbl { color:#d1d5db; }
+.raw-pulse { width:7px; height:7px; background:#f59e0b; border-radius:50%; animation:rpulse 1s ease-in-out infinite; }
+@keyframes rpulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+
+.raw-log { background:#0f172a; border-radius:8px; padding:10px 12px; max-height:120px; overflow-y:auto; }
+.raw-log-line { font-family:'JetBrains Mono',monospace; font-size:10px; color:#64748b; line-height:1.7; }
+.raw-log-line.step { color:#38bdf8; font-weight:700; }
+.raw-log-line.err  { color:#f87171; }
+
+.raw-status { font-size:13px; color:#6366f1; font-weight:600; text-align:center; padding:8px; }
+.raw-error  { background:#fef2f2; border:1px solid #fecaca; color:#dc2626; border-radius:10px; padding:10px 14px; font-size:13px; }
+
+/* Hint box */
+.raw-hint-box { background:#f9fafb; border:1px solid #e5e7eb; border-radius:12px; padding:14px 16px; }
+.raw-hint-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#9ca3af; margin-bottom:10px; }
+.raw-hint-list  { display:flex; flex-direction:column; gap:8px; }
+.raw-hint-item  { display:flex; gap:10px; align-items:baseline; }
+.raw-hint-type  { font-size:12px; font-weight:700; color:#4f46e5; min-width:140px; flex-shrink:0; font-family:'JetBrains Mono',monospace; }
+.raw-hint-desc  { font-size:12px; color:#6b7280; }

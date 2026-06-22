@@ -17,15 +17,16 @@ function arrMax(arr) {
   return m;
 }
 
-export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05 }) {
+export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05, pValueType="adj" }) {
   const data = useMemo(() => {
     if (!genes?.length) return null;
     const eps = 1e-300;
+    const getPVal = (g) => pValueType === "raw" ? g.pValue : g.adjPVal;
 
     const logFCs = [], negLogs = [];
     for (let i = 0; i < genes.length; i++) {
       const fc = genes[i].logFC;
-      const p  = genes[i].adjPVal;
+      const p  = getPVal(genes[i]);
       if (isFinite(fc)) logFCs.push(fc);
       const nl = -Math.log10(p > 0 ? p : eps);
       if (isFinite(nl)) negLogs.push(nl);
@@ -45,9 +46,10 @@ export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05 })
     const ns_pts = [], sig_pts = [];
     for (let i = 0; i < genes.length; i++) {
       const g    = genes[i];
-      const type = classifyGene(g, fcThreshold, pThreshold);
-      const nl   = -Math.log10(g.adjPVal > 0 ? g.adjPVal : eps);
-      const pt   = { geneSymbol: g.geneSymbol, logFC: g.logFC, adjPVal: g.adjPVal,
+      const type = classifyGene(g, fcThreshold, pThreshold, pValueType);
+      const p    = getPVal(g);
+      const nl   = -Math.log10(p > 0 ? p : eps);
+      const pt   = { geneSymbol: g.geneSymbol, logFC: g.logFC, adjPVal: g.adjPVal, pValue: g.pValue,
                      cx: sx(g.logFC), cy: sy(nl), type, nl };
       if (type === "ns") ns_pts.push(pt);
       else               sig_pts.push(pt);
@@ -68,7 +70,7 @@ export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05 })
     const yTicks = Array.from({length:6}, (_,i) => ({ v: i*yStep, y: sy(i*yStep) }));
 
     return { ns_display, sig_pts, labeled, pLine, sx, sy, xTicks, yTicks };
-  }, [genes, fcThreshold, pThreshold]);
+  }, [genes, fcThreshold, pThreshold, pValueType]);
 
   if (!data) return <p style={{color:"#9ca3af",textAlign:"center",padding:40}}>No data to display</p>;
   const { ns_display, sig_pts, labeled, pLine, sx, sy, xTicks, yTicks } = data;
@@ -98,7 +100,7 @@ export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05 })
           {/* NS points (sampled) */}
           {ns_display.map((p, i) => (
             <circle key={i} cx={p.cx} cy={p.cy} r={2.5} fill={C.ns} opacity={0.4}>
-              <title>{`${p.geneSymbol}\nlogFC: ${p.logFC.toFixed(3)}\nadj.P: ${p.adjPVal.toExponential(2)}`}</title>
+              <title>{`${p.geneSymbol}\nlogFC: ${p.logFC.toFixed(3)}\nP.Value: ${p.pValue.toExponential(2)}\nadj.P: ${p.adjPVal.toExponential(2)}`}</title>
             </circle>
           ))}
 
@@ -106,7 +108,7 @@ export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05 })
           {sig_pts.map((p, i) => (
             <circle key={i} cx={p.cx} cy={p.cy} r={4.5}
               fill={C[p.type]} opacity={0.85} stroke="#fff" strokeWidth={0.5}>
-              <title>{`${p.geneSymbol}\nlogFC: ${p.logFC.toFixed(3)}\nadj.P: ${p.adjPVal.toExponential(2)}`}</title>
+              <title>{`${p.geneSymbol}\nlogFC: ${p.logFC.toFixed(3)}\nP.Value: ${p.pValue.toExponential(2)}\nadj.P: ${p.adjPVal.toExponential(2)}`}</title>
             </circle>
           ))}
 
@@ -147,7 +149,7 @@ export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05 })
           ))}
           <text transform={`translate(-44,${PH/2}) rotate(-90)`}
             fill="#6b7280" fontSize={11} textAnchor="middle" fontWeight="600">
-            -log₁₀(adj.P)
+            {pValueType === "raw" ? "-log₁₀(P.Value)" : "-log₁₀(adj.P)"}
           </text>
 
           {/* Legend */}

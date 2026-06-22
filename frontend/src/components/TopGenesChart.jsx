@@ -1,14 +1,16 @@
 import { useMemo } from "react";
 import { classifyGene } from "../utils/parseCSV";
 
-export default function TopGenesChart({ genes, fcThreshold=0.5, pThreshold=0.05 }) {
+export default function TopGenesChart({ genes, fcThreshold=0.5, pThreshold=0.05, pValueType="adj" }) {
+  const getPVal = (g) => pValueType === "raw" ? g.pValue : g.adjPVal;
   const top = useMemo(() => {
     return [...genes]
-      .map(g => ({ ...g, type: classifyGene(g, fcThreshold, pThreshold) }))
+      .map(g => ({ ...g, type: classifyGene(g, fcThreshold, pThreshold, pValueType) }))
       .filter(g => g.type !== "ns")
-      .sort((a,b) => a.adjPVal - b.adjPVal)
+      .sort((a,b) => getPVal(a) - getPVal(b))
       .slice(0, 20);
-  }, [genes, fcThreshold, pThreshold]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [genes, fcThreshold, pThreshold, pValueType]);
 
   if (top.length === 0) return (
     <div style={{ textAlign:"center", padding:"60px 0", color:"#9ca3af" }}>
@@ -46,7 +48,7 @@ export default function TopGenesChart({ genes, fcThreshold=0.5, pThreshold=0.05 
                 {g.logFC > 0 ? "+" : ""}{g.logFC.toFixed(4)}
               </div>
               <div style={{ width:80, textAlign:"right", fontFamily:"'JetBrains Mono',monospace", fontSize:11, color:"#6b7280", flexShrink:0 }}>
-                {g.adjPVal.toExponential(2)}
+                {getPVal(g).toExponential(2)}
               </div>
             </div>
           );
@@ -55,7 +57,7 @@ export default function TopGenesChart({ genes, fcThreshold=0.5, pThreshold=0.05 
           <div style={{ width:110, fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase" }}>Gene</div>
           <div style={{ flex:1, fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase" }}>logFC magnitude</div>
           <div style={{ width:80, textAlign:"right", fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase" }}>logFC</div>
-          <div style={{ width:80, textAlign:"right", fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase" }}>adj.P</div>
+          <div style={{ width:80, textAlign:"right", fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase" }}>{pValueType === "raw" ? "P.Value" : "adj.P"}</div>
         </div>
       </div>
     </div>

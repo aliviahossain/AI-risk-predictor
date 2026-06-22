@@ -8,7 +8,7 @@ const C={ up:"#ef4444", down:"#3b82f6", ns:"#d1d5db" };
 function arrMin(arr) { let m=arr[0]; for(let i=1;i<arr.length;i++) if(arr[i]<m) m=arr[i]; return m; }
 function arrMax(arr) { let m=arr[0]; for(let i=1;i<arr.length;i++) if(arr[i]>m) m=arr[i]; return m; }
 
-export default function MAPlot({ genes, fcThreshold=0.1, pThreshold=0.05 }) {
+export default function MAPlot({ genes, fcThreshold=0.1, pThreshold=0.05, pValueType="adj" }) {
   const data = useMemo(() => {
     if (!genes?.length) return null;
 
@@ -30,7 +30,7 @@ export default function MAPlot({ genes, fcThreshold=0.1, pThreshold=0.05 }) {
     const ns_pts=[], sig_pts=[];
     for (let i=0; i<genes.length; i++) {
       const g    = genes[i];
-      const type = classifyGene(g, fcThreshold, pThreshold);
+      const type = classifyGene(g, fcThreshold, pThreshold, pValueType);
       const pt   = { geneSymbol:g.geneSymbol, aveExpr:g.aveExpr, logFC:g.logFC,
                      cx:sx(g.aveExpr), cy:sy(g.logFC), type };
       if (type==="ns") ns_pts.push(pt); else sig_pts.push(pt);
@@ -48,7 +48,7 @@ export default function MAPlot({ genes, fcThreshold=0.1, pThreshold=0.05 }) {
     const midY=sy(0);
 
     return {ns_display, sig_pts, xTicks, yTicks, midY};
-  },[genes,fcThreshold,pThreshold]);
+  },[genes,fcThreshold,pThreshold,pValueType]);
 
   if (!data) return <p style={{color:"#9ca3af",textAlign:"center",padding:40}}>No data</p>;
   const {ns_display, sig_pts, xTicks, yTicks, midY}=data;

@@ -1,20 +1,20 @@
 import { classifyGene } from "../utils/parseCSV";
 
-export default function DownloadButton({ genes, filename="DEG", fcThreshold=0.5, pThreshold=0.05 }) {
+export default function DownloadButton({ genes, filename="DEG", fcThreshold=0.5, pThreshold=0.05, pValueType="adj" }) {
   const downloadCSV = () => {
     const header = "GeneSymbol,logFC,AveExpr,t,P.Value,adj.P.Val,B,Type\n";
     const rows = genes.map(g => {
-      const type = classifyGene(g, fcThreshold, pThreshold);
+      const type = classifyGene(g, fcThreshold, pThreshold, pValueType);
       return `${g.geneSymbol},${g.logFC},${g.aveExpr},${g.tStat},${g.pValue},${g.adjPVal},${g.bStat},${type}`;
     }).join("\n");
     trigger(header+rows, "text/csv", `${filename}_annotated.csv`);
   };
 
   const downloadSigCSV = () => {
-    const sig = genes.filter(g => classifyGene(g, fcThreshold, pThreshold) !== "ns");
+    const sig = genes.filter(g => classifyGene(g, fcThreshold, pThreshold, pValueType) !== "ns");
     const header = "GeneSymbol,logFC,AveExpr,P.Value,adj.P.Val,Type\n";
     const rows = sig.map(g => {
-      const type = classifyGene(g, fcThreshold, pThreshold);
+      const type = classifyGene(g, fcThreshold, pThreshold, pValueType);
       return `${g.geneSymbol},${g.logFC},${g.aveExpr},${g.pValue},${g.adjPVal},${type}`;
     }).join("\n");
     trigger(header+rows, "text/csv", `${filename}_significant_only.csv`);
