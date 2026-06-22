@@ -18,7 +18,7 @@ cat("Raw file  :", if (is.null(raw_file)) "none (will download from GEO)" else r
 # =============================================================================
 # 0. Packages
 # =============================================================================
-options(download.file.method="wininet", warn=1, timeout=600)
+options(warn=1, timeout=600)
 
 load_pkg <- function(pkg) {
   if (!requireNamespace(pkg, quietly=TRUE)) {
@@ -398,8 +398,8 @@ tryCatch({
 # 9. Summary JSON
 # =============================================================================
 cat("\nSTEP 9: Writing summary...\n")
-n_up <- sum(results$logFC > 0 & results$P.Value < 0.05, na.rm=TRUE)
-n_dn <- sum(results$logFC < 0 & results$P.Value < 0.05, na.rm=TRUE)
+n_up <- sum(results$logFC > 0 & results$adj.P.Val < 0.05, na.rm=TRUE)
+n_dn <- sum(results$logFC < 0 & results$adj.P.Val < 0.05, na.rm=TRUE)
 
 writeLines(paste0(
   '{"geo_id":"',        geo_id,               '",',

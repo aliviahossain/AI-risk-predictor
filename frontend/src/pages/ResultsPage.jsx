@@ -4,10 +4,12 @@ import GeneTable      from "../components/GeneTable";
 import DownloadButton from "../components/DownloadButton";
 import MAPlot         from "../components/MAPlot";
 import TopGenesChart  from "../components/TopGenesChart";
+import HeatmapViewer  from "../components/HeatmapViewer";
 import { getSummary, getDataRange } from "../utils/parseCSV";
+import { API } from "../config";
 import "./ResultsPage.css";
 
-const TABS = [
+const BASE_TABS = [
   { id:"volcano",  label:"🌋 Volcano Plot" },
   { id:"ma",       label:"📈 MA Plot"      },
   { id:"topgenes", label:"🏆 Top Genes"    },
@@ -18,7 +20,7 @@ const TABS = [
 // Standard scientific P thresholds only
 const P_OPTIONS = [0.001, 0.01, 0.05];
 
-export default function ResultsPage({ genes, filename, onReset }) {
+export default function ResultsPage({ genes, filename, jobId, onReset }) {
   const range = useMemo(() => {
     try { return getDataRange(genes); }
     catch { return { fcMin:-1, fcMax:1, fcAbsMax:1, negLogMax:5, suggestedFC:0, suggestedP:0.05 }; }
@@ -37,6 +39,10 @@ export default function ResultsPage({ genes, filename, onReset }) {
   const fcMax = range.fcAbsMax > 0
     ? parseFloat((range.fcAbsMax).toFixed(2))
     : 2;
+
+  const TABS = jobId
+    ? [...BASE_TABS, { id:"heatmap", label:"🖼 Heatmap" }]
+    : BASE_TABS;
 
   return (
     <div className="rp-root">
@@ -194,6 +200,13 @@ export default function ResultsPage({ genes, filename, onReset }) {
               <h2 className="rp-panel-title">Gene Expression Table</h2>
               <p className="rp-panel-sub">All {genes.length.toLocaleString()} genes · search, filter and sort.</p>
               <GeneTable genes={genes} fcThreshold={fcThreshold} pThreshold={pThreshold} pValueType={pValueType} />
+            </>
+          )}
+          {tab === "heatmap" && jobId && (
+            <>
+              <h2 className="rp-panel-title">Expression Heatmap</h2>
+              <p className="rp-panel-sub">Top 28 differentially expressed genes across all samples.</p>
+              <HeatmapViewer imageUrl={`${API}/geo/heatmap/${jobId}`} />
             </>
           )}
           {tab === "summary" && (

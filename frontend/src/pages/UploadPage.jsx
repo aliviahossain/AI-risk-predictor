@@ -66,17 +66,20 @@ export default function UploadPage({ onDataLoaded }) {
   const pollJob = (jid, gid) => {
     const iv = setInterval(async () => {
       try {
-        const res  = await fetch(`${API}/geo/status/${jid}`);
+        const res = await fetch(`${API}/geo/status/${jid}`);
+        if (!res.ok) throw new Error("Status poll failed — server returned " + res.status);
         const data = await res.json();
         setJobStep(data.step); setJobLog(data.log||[]); setJobStatus(data.status);
         if (data.status === "done") {
           clearInterval(iv); setLoading(false);
           const csvRes = await fetch(`${API}/geo/download/${jid}`);
-          const genes  = parseCSV(await csvRes.text());
+          if (!csvRes.ok) throw new Error("Could not download pipeline results (HTTP " + csvRes.status + ")");
+          const genes = parseCSV(await csvRes.text());
+          if (genes.length === 0) throw new Error("Pipeline produced no valid genes — check the log above.");
           onDataLoaded(genes, `${gid}_DEGs_Full.csv`, jid);
         }
         if (data.status === "error") { clearInterval(iv); setLoading(false); setError("Pipeline error: "+(data.errors?.[0]||"Unknown")); }
-      } catch { clearInterval(iv); setLoading(false); }
+      } catch (e) { clearInterval(iv); setLoading(false); setError(e.message || "Network error while polling pipeline."); }
     }, 2500);
   };
 

@@ -4,12 +4,12 @@ import { classifyGene } from "../utils/parseCSV";
 export default function TopGenesChart({ genes, fcThreshold=0.5, pThreshold=0.05, pValueType="adj" }) {
   const getPVal = (g) => pValueType === "raw" ? g.pValue : g.adjPVal;
   const top = useMemo(() => {
+    const getP = (g) => pValueType === "raw" ? g.pValue : g.adjPVal;
     return [...genes]
       .map(g => ({ ...g, type: classifyGene(g, fcThreshold, pThreshold, pValueType) }))
       .filter(g => g.type !== "ns")
-      .sort((a,b) => getPVal(a) - getPVal(b))
+      .sort((a,b) => getP(a) - getP(b))
       .slice(0, 20);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genes, fcThreshold, pThreshold, pValueType]);
 
   if (top.length === 0) return (

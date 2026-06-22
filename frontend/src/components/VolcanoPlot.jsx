@@ -77,7 +77,7 @@ export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05, p
 
   return (
     <div style={{width:"100%", overflowX:"auto"}}>
-      <svg viewBox={`0 0 ${W} ${H}`}
+      <svg data-chart="volcano" viewBox={`0 0 ${W} ${H}`}
         style={{width:"100%",maxWidth:W,display:"block",margin:"0 auto",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
         <g transform={`translate(${PAD.left},${PAD.top})`}>
           <rect x={0} y={0} width={PW} height={PH} fill="#fafafa" rx={6} stroke="#e5e7eb"/>

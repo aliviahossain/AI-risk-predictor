@@ -21,7 +21,7 @@ export default function DownloadButton({ genes, filename="DEG", fcThreshold=0.5,
   };
 
   const downloadSVG = () => {
-    const svg = document.querySelector("svg");
+    const svg = document.querySelector("svg[data-chart='volcano']");
     if (!svg) return alert("Switch to Volcano Plot tab first.");
     trigger(svg.outerHTML, "image/svg+xml", `${filename}_volcano.svg`);
   };

@@ -7,6 +7,8 @@ function wait(ms) {
 }
 
 const PIPELINE_STEPS = [
+  "Inspecting uploaded file",
+  "Selecting expression file",
   "Reading count matrix",
   "Cleaning matrix",
   "Assigning groups",

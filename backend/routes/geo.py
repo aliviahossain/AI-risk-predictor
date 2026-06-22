@@ -68,10 +68,10 @@ def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | 
             "STEP 1": "Inspecting uploaded file",
             "STEP 2": "Selecting expression file",
             "STEP 3": "Reading count matrix",
-            "STEP 4": "Reading count matrix",
+            "STEP 4": "Cleaning matrix",
             "STEP 5": "Assigning groups",
             "STEP 6": "Running DGE (voom + limma)",
-            "STEP 7": "Exporting results",
+            "STEP 7": "Building results",
             "STEP 8": "Generating heatmap",
             "STEP 9": "Finalizing",
         }
@@ -80,10 +80,10 @@ def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | 
             "STEP 1": "Downloading GEO metadata",
             "STEP 2": "Downloading count data",
             "STEP 3": "Reading count matrix",
-            "STEP 4": "Reading count matrix",
+            "STEP 4": "Cleaning matrix",
             "STEP 5": "Assigning groups",
             "STEP 6": "Running DGE (voom + limma)",
-            "STEP 7": "Exporting results",
+            "STEP 7": "Building results",
             "STEP 8": "Generating heatmap",
             "STEP 9": "Finalizing",
         }
@@ -238,7 +238,8 @@ async def run_geo_pipeline_from_file(
     os.makedirs(job_dir, exist_ok=True)
 
     # Save the uploaded file into the job dir so the R subprocess can read it.
-    saved_path = os.path.join(job_dir, file.filename)
+    # os.path.basename strips any directory components from the client-supplied name.
+    saved_path = os.path.join(job_dir, os.path.basename(file.filename))
     try:
         with open(saved_path, "wb") as out_f:
             shutil.copyfileobj(file.file, out_f)
