@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { parseCSV } from "../utils/parseCSV";
+import { API } from "../config";
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -19,7 +20,7 @@ export default function GeoFetchForm({ onAnalysisComplete, onHeatmapGenerated })
       }
       attempts += 1;
 
-      const response = await fetch(`http://localhost:8000/geo/status/${jobId}`);
+      const response = await fetch(`${API}/geo/status/${jobId}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: "Unknown status error" }));
         throw new Error(errorData.detail || "Failed to poll GEO pipeline status.");
@@ -48,7 +49,7 @@ export default function GeoFetchForm({ onAnalysisComplete, onHeatmapGenerated })
     setStatus("Starting GEO pipeline...");
 
     try {
-      const response = await fetch("http://localhost:8000/geo/run", {
+      const response = await fetch(`${API}/geo/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ geo_id: cleanId }),
@@ -65,7 +66,7 @@ export default function GeoFetchForm({ onAnalysisComplete, onHeatmapGenerated })
       await pollJobStatus(jobId);
       setStatus("Pipeline complete. Downloading results...");
 
-      const csvResponse = await fetch(`http://localhost:8000/geo/download/${jobId}`);
+      const csvResponse = await fetch(`${API}/geo/download/${jobId}`);
       if (!csvResponse.ok) {
         const errorData = await csvResponse.json().catch(() => ({}));
         throw new Error(errorData.detail || "Unable to download GEO results.");
@@ -78,7 +79,7 @@ export default function GeoFetchForm({ onAnalysisComplete, onHeatmapGenerated })
       }
 
       if (onHeatmapGenerated) {
-        onHeatmapGenerated(`http://localhost:8000/geo/heatmap/${jobId}`);
+        onHeatmapGenerated(`${API}/geo/heatmap/${jobId}`);
       }
 
       setStatus("GEO results ready.");
