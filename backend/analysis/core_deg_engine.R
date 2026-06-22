@@ -37,22 +37,55 @@ for (p in c("GEOquery","limma","edgeR","pheatmap","Biobase")) load_pkg(p)
 # =============================================================================
 using_raw <- !is.null(raw_file) && file.exists(raw_file)
 
+probe_to_gene <- NULL   # will be populated from GPL annotation when available
+
 if (using_raw) {
   cat("\nSTEP 1: Raw file provided — skipping GEO metadata download\n")
   cat("  File:", basename(raw_file), "\n")
-  # Create placeholder metadata — will be filled after reading matrix
   gse      <- NULL
   metadata <- NULL
 } else {
   cat("\nSTEP 1: Downloading GEO metadata...\n")
   gse_list <- tryCatch(
-    getGEO(geo_id, destdir=output_dir, getGPL=FALSE, AnnotGPL=FALSE),
+    getGEO(geo_id, destdir=output_dir, getGPL=TRUE, AnnotGPL=TRUE),
     error=function(e){ cat("ERROR metadata:", conditionMessage(e), "\n"); quit(status=1) }
   )
   gse      <- gse_list[[1]]
   metadata <- pData(gse)
   cat("  Samples :", nrow(metadata), "\n")
   cat("  Platform:", as.character(annotation(gse)), "\n")
+
+  # Build probe → gene symbol lookup from platform feature annotation
+  tryCatch({
+    fd <- fData(gse)
+    # Column name varies by platform/manufacturer
+    sym_candidates <- c("Gene Symbol", "GENE_SYMBOL", "Symbol", "ILMN_Gene",
+                        "gene_assignment", "mrna_assignment", "GeneSymbol",
+                        "gene_name", "Gene_Symbol", "symbol")
+    sym_col <- intersect(sym_candidates, colnames(fd))[1]
+    if (!is.na(sym_col)) {
+      raw_syms <- as.character(fd[[sym_col]])
+      # Affymetrix ST arrays store annotation as
+      # "NM_001234 // GENENAME // description // chr // ID /// ..."
+      # Take the second token after the first " // " as the gene symbol.
+      clean_sym <- sapply(raw_syms, function(x) {
+        if (grepl("//", x, fixed=TRUE)) {
+          parts <- trimws(strsplit(x, " // ", fixed=TRUE)[[1]])
+          sym   <- if (length(parts) >= 2) parts[2] else parts[1]
+          # Multiple transcripts separated by " /// " — keep first
+          sym <- trimws(strsplit(sym, " /// ", fixed=TRUE)[[1]][1])
+          return(if (sym %in% c("---","","NA")) NA_character_ else sym)
+        }
+        x <- trimws(x)
+        if (x %in% c("---","","NA")) NA_character_ else x
+      }, USE.NAMES=FALSE)
+      probe_to_gene <- setNames(clean_sym, rownames(fd))
+      cat("  Probe→symbol:", sum(!is.na(probe_to_gene)), "/",
+          length(probe_to_gene), "probes annotated\n")
+    } else {
+      cat("  No gene symbol column found in GPL annotation\n")
+    }
+  }, error=function(e) cat("  WARN probe annotation:", conditionMessage(e), "\n"))
 }
 
 # =============================================================================
@@ -275,32 +308,58 @@ get_col_safe <- function(df, col) {
   else rep("", nrow(df))
 }
 
-titles   <- get_col_safe(metadata_final, "title")
-chars    <- get_col_safe(metadata_final, "characteristics_ch1")
-source   <- get_col_safe(metadata_final, "source_name_ch1")
-combined <- paste(titles, chars, source)
+titles <- get_col_safe(metadata_final, "title")
+source <- get_col_safe(metadata_final, "source_name_ch1")
 
-CASE <- "t2d|type.2|diabetic|diabetes|tumor|cancer|carcinoma|adenocarcinoma|case|patient|disease"
-CTRL <- "control|normal|healthy|non.diabetic|non.tumor|adjacent|benign|uninfected|wt"
+# Concatenate ALL characteristics_ch1* columns — disease state is often in
+# characteristics_ch1.1 or .2, not the first column, so reading only
+# characteristics_ch1 misses it entirely.
+char_cols <- grep("^characteristics_ch", colnames(metadata_final), value=TRUE)
+if (length(char_cols) > 0) {
+  chars_all <- apply(
+    metadata_final[, char_cols, drop=FALSE], 1,
+    function(x) paste(tolower(trimws(as.character(x))), collapse=" ")
+  )
+} else {
+  chars_all <- rep("", n_samples)
+}
+combined <- paste(titles, chars_all, source)
+cat("  Sample metadata (first 3):\n")
+for (i in seq_len(min(3, length(combined)))) cat("   ", combined[i], "\n")
+
+# T2D-specific disease keywords — NGT (Normal Glucose Tolerance) and T2DM added
+CASE <- paste0("\\bt2d\\b|\\bt2dm\\b|type.2|type2.diab|\\bdiabetic\\b|\\bdiabetes\\b|",
+               "tumor|cancer|carcinoma|adenocarcinoma|\\bcase\\b|patient|",
+               "\\bdisease\\b|hyperglycemi|insulin.resist")
+CTRL <- paste0("control|\\bnormal\\b|healthy|non.diabetic|nondiabetic|",
+               "\\bngt\\b|\\bigt\\b|non.t2d|non.tumor|adjacent|",
+               "benign|uninfected|\\bwt\\b|normoglycemi|glucose.tolerant")
 
 group <- rep("Case", n_samples)
 group[grepl(CTRL, combined, ignore.case=TRUE)] <- "Control"
 
+# If everyone ended up in one group, try flipping: assign Case only to CASE matches
 if (sum(group=="Case")==0 || sum(group=="Control")==0) {
   group <- ifelse(grepl(CASE, combined, ignore.case=TRUE), "Case", "Control")
 }
+# Fallback: check column names of the expression matrix itself
 if (sum(group=="Case")==0 || sum(group=="Control")==0) {
-  cn    <- tolower(colnames(ex_matrix))
-  group <- ifelse(grepl("t2d|case|tumor|cancer|disease|patient", cn), "Case", "Control")
+  cn <- tolower(colnames(ex_matrix))
+  group <- ifelse(grepl("t2d|t2dm|case|tumor|cancer|disease|diabetic|patient", cn,
+                        ignore.case=TRUE), "Case", "Control")
 }
+# Last resort: 50/50 split (results will be biologically meaningless)
 if (sum(group=="Case")==0 || sum(group=="Control")==0) {
-  cat("  WARN: splitting 50/50\n")
+  cat("  WARN: could not detect groups — falling back to 50/50 split.",
+      "Results may not be biologically meaningful.\n")
   half  <- floor(n_samples/2)
-  group <- c(rep("Control", half), rep("Case", n_samples-half))
+  group <- c(rep("Control", half), rep("Case", n_samples - half))
 }
 
 group <- factor(group, levels=c("Control","Case"))
 cat("  Case:", sum(group=="Case"), "| Control:", sum(group=="Control"), "\n")
+cat("  Case samples   :", paste(colnames(ex_matrix)[group=="Case"],    collapse=", "), "\n")
+cat("  Control samples:", paste(colnames(ex_matrix)[group=="Control"], collapse=", "), "\n")
 
 # =============================================================================
 # 6. DGE analysis
@@ -347,6 +406,25 @@ results <- tryCatch(
   error=function(e){ cat("ERROR topTable:", conditionMessage(e),"\n"); quit(status=1) }
 )
 
+# Map probe IDs → gene symbols using platform annotation
+if (!is.null(probe_to_gene)) {
+  rn     <- rownames(results)
+  mapped <- probe_to_gene[rn]
+  valid  <- !is.na(mapped) & nchar(trimws(mapped)) > 0
+  results$GeneSymbol <- ifelse(valid, mapped, rn)
+  cat("  Annotated", sum(valid), "/", nrow(results), "probes to gene symbols\n")
+
+  # Also rename expression matrix rows so heatmap labels show gene symbols
+  rename_rows <- function(mat) {
+    sym <- probe_to_gene[rownames(mat)]
+    ok  <- !is.na(sym) & nchar(trimws(sym)) > 0
+    rownames(mat)[ok] <- sym[ok]
+    mat
+  }
+  ex_matrix <<- rename_rows(ex_matrix)
+  if (!is.null(v) && !is.null(v$E)) v$E <<- rename_rows(v$E)
+}
+
 if (!"GeneSymbol" %in% colnames(results)) results$GeneSymbol <- rownames(results)
 results$GeneSymbol <- trimws(as.character(results$GeneSymbol))
 results <- results[!is.na(results$GeneSymbol) &
@@ -365,7 +443,7 @@ write.csv(
   full_csv, row.names=FALSE
 )
 write.csv(
-  subset(results, P.Value < 0.001)[, c("GeneSymbol","logFC","AveExpr","t","P.Value","adj.P.Val","B")],
+  subset(results, adj.P.Val < 0.05)[, c("GeneSymbol","logFC","AveExpr","t","P.Value","adj.P.Val","B")],
   file.path(output_dir, paste0(geo_id,"_DEGs_Strict.csv")),
   row.names=FALSE
 )
