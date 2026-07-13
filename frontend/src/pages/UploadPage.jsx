@@ -1,8 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { parseCSV } from "../utils/parseCSV";
 import RawUploadForm from "../components/RawUploadForm";
 import { API } from "../config";
 import "./UploadPage.css";
+
+/* Full-page rotating background — DNA / gene imagery only (Unsplash CDN) */
+const HERO_IMAGES = [
+  { url:"https://images.unsplash.com/photo-1643780668909-580822430155?q=80&w=1332&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", caption:"DNA double helix" },
+  { url:"https://images.unsplash.com/photo-1681911046064-e663d5192921?q=80&w=1121&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", caption:"DNA helix strand" },
+  { url:"https://images.unsplash.com/photo-1581594549595-35f6edc7b762?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", caption:"Genomic sequencing" },
+];
 
 const GEO_SUGGESTIONS = [
   { id:"GSE280402", label:"T2D Blood",        desc:"Type 2 Diabetes · Blood · RNA-seq",             tag:"T2D"    },
@@ -33,6 +40,12 @@ export default function UploadPage({ onDataLoaded }) {
   const [jobLog,    setJobLog]    = useState([]);
   const [jobStatus, setJobStatus] = useState("");
   const [filterTag, setFilterTag] = useState("All");
+  const [heroIdx,   setHeroIdx]   = useState(0);
+
+  useEffect(() => {
+    const iv = setInterval(() => setHeroIdx(i => (i + 1) % HERO_IMAGES.length), 4500);
+    return () => clearInterval(iv);
+  }, []);
 
   const processFile = (f) => {
     if (!f) return;
@@ -89,7 +102,18 @@ export default function UploadPage({ onDataLoaded }) {
   return (
     <div className="up-root">
       <div className="up-bg-grid"/>
+      {/* Full-page rotating gene / cancer background */}
+      <div className="up-bgshow">
+        {HERO_IMAGES.map((img,i)=>(
+          <div key={img.url}
+            className={`up-bgshow-slide ${i===heroIdx?"active":""}`}
+            style={{backgroundImage:`url(${img.url})`}}/>
+        ))}
+        <div className="up-bgshow-overlay"/>
+      </div>
+
       <div className="up-center">
+        <div className="up-hero-cap">🧬 {HERO_IMAGES[heroIdx].caption}</div>
         <div className="up-badge">GENE EXPRESSION ANALYSIS</div>
         <h1 className="up-title">DEG Analysis <em>Viewer</em></h1>
         <p className="up-sub">Visualize differentially expressed genes · Volcano plots · MA plots · Gene tables</p>

@@ -22,6 +22,28 @@
   width:100%; max-width:720px; text-align:center;
 }
 
+/* Full-page rotating gene / cancer background */
+.up-bgshow { position:fixed; inset:0; z-index:0; overflow:hidden; }
+.up-bgshow-slide {
+  position:absolute; inset:0; background-size:cover; background-position:center;
+  opacity:0; transform:scale(1.06);
+  transition:opacity 0.6s ease, transform 9s ease;
+}
+.up-bgshow-slide.active { opacity:1; transform:scale(1); }
+.up-bgshow-overlay {
+  position:absolute; inset:0;
+  background:linear-gradient(135deg, rgba(247,246,243,0.58) 0%, rgba(237,233,254,0.50) 45%, rgba(252,231,243,0.46) 100%);
+}
+
+/* Floating caption for the current background image */
+.up-hero-cap {
+  display:inline-block; margin-bottom:16px;
+  color:#4c1d95; font-size:12px; font-weight:700; letter-spacing:0.4px;
+  background:rgba(255,255,255,0.7); backdrop-filter:blur(6px);
+  padding:6px 16px; border-radius:99px; border:1px solid rgba(139,92,246,0.3);
+  box-shadow:0 4px 14px rgba(76,29,149,0.12);
+}
+
 /* Hero */
 .up-badge {
   display:inline-block; background:#ede9fe; color:#5b21b6;
@@ -202,6 +224,8 @@
 
 @media(max-width:600px) {
   .up-title { font-size:34px; }
+  .up-hero { height:150px; }
+  .up-tab-banner { height:88px; }
   .up-geo-grid { grid-template-columns:1fr 1fr; }
   .up-geo-row  { flex-direction:column; }
   .up-geo-run  { width:100%; justify-content:center; }
