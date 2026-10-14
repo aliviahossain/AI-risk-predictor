@@ -1,4 +1,7 @@
 # Root ignore file for AI-risk-predictor
+.env
+.env.*
+!.env.example
 
 # Python
 __pycache__/

@@ -7,6 +7,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
 import csv
 import io
+import os
 
 router = APIRouter(prefix="/deg", tags=["DEG Analysis"])
 
@@ -15,6 +16,19 @@ router = APIRouter(prefix="/deg", tags=["DEG Analysis"])
 #          the upload path and the GEO pipeline path. Unified to 1.0 across both.
 DEFAULT_FC_THRESHOLD = 1.0
 DEFAULT_P_THRESHOLD  = 0.05
+MAX_DEG_CSV_BYTES = max(
+    1, int(os.getenv("MAX_DEG_CSV_BYTES", str(25 * 1024 * 1024)))
+)
+
+
+async def _read_limited_upload(file: UploadFile) -> bytes:
+    raw_bytes = await file.read(MAX_DEG_CSV_BYTES + 1)
+    if len(raw_bytes) > MAX_DEG_CSV_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CSV upload exceeds the {MAX_DEG_CSV_BYTES // (1024 * 1024)} MB limit.",
+        )
+    return raw_bytes
 
 
 def _decode_content(raw_bytes: bytes) -> str:
@@ -108,14 +122,16 @@ async def upload_deg_file(file: UploadFile = File(...)):
     """
     Accepts a DEG results CSV file and returns parsed gene data + summary.
     """
-    if not file.filename.endswith((".csv", ".tsv")):
+    if not (file.filename or "").lower().endswith((".csv", ".tsv")):
         raise HTTPException(status_code=400, detail="Only .csv or .tsv files are supported.")
 
     try:
-        raw_bytes = await file.read()
+        raw_bytes = await _read_limited_upload(file)
         content   = _decode_content(raw_bytes)   # FIX 16: encoding-aware decode
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read file.")
 
@@ -153,10 +169,12 @@ async def filter_genes(
     Re-parses and re-classifies genes with custom thresholds.
     """
     try:
-        raw_bytes = await file.read()
+        raw_bytes = await _read_limited_upload(file)
         content   = _decode_content(raw_bytes)   # FIX 16
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read file.")
 

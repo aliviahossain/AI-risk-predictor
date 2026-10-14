@@ -4,7 +4,7 @@ Accepts a GEO ID, runs the R pipeline as a subprocess,
 and streams real-time progress back to the frontend.
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 import subprocess
@@ -13,10 +13,21 @@ import uuid
 import os
 import json
 import shutil
+import tarfile
+import time
+from pathlib import Path, PurePosixPath
+import re
 
 router = APIRouter(prefix="/geo", tags=["GEO Pipeline"])
 
-UPLOAD_DIR = "uploads"
+UPLOAD_DIR = os.path.abspath(os.getenv("UPLOAD_DIR", "uploads"))
+MAX_ACTIVE_PIPELINES = max(1, int(os.getenv("MAX_ACTIVE_PIPELINES", "1")))
+MAX_UPLOAD_BYTES = max(1, int(os.getenv("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))))
+MAX_EXTRACTED_BYTES = max(
+    1, int(os.getenv("MAX_EXTRACTED_BYTES", str(512 * 1024 * 1024)))
+)
+JOB_RETENTION_HOURS = max(1, int(os.getenv("JOB_RETENTION_HOURS", "24")))
+MAX_JOBS_PER_IP_PER_HOUR = max(1, int(os.getenv("MAX_JOBS_PER_IP_PER_HOUR", "5")))
 
 # FIX 11: os.path.dirname(__file__) returns "" when the module is run from its
 #          own directory, making the relative join resolve against CWD instead of
@@ -34,6 +45,158 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 #          simultaneously — a race condition. Protect all access with a Lock.
 jobs: dict = {}
 _jobs_lock = threading.Lock()
+_job_requests: dict[str, list[float]] = {}
+
+
+def cleanup_expired_jobs(now: float | None = None) -> None:
+    """Remove completed jobs and their files after the configured retention."""
+    cutoff = (time.time() if now is None else now) - JOB_RETENTION_HOURS * 3600
+    expired_dirs = []
+
+    with _jobs_lock:
+        expired_ids = [
+            job_id
+            for job_id, job in jobs.items()
+            if job.get("status") in {"done", "error"}
+            and job.get("finished_at", float("inf")) < cutoff
+        ]
+        for job_id in expired_ids:
+            job = jobs.pop(job_id)
+            if job.get("job_dir"):
+                expired_dirs.append(job["job_dir"])
+
+    upload_root = Path(UPLOAD_DIR).resolve()
+    for job_dir in expired_dirs:
+        path = Path(job_dir).resolve()
+        if path.parent == upload_root:
+            shutil.rmtree(path, ignore_errors=True)
+
+    if upload_root.is_dir():
+        with _jobs_lock:
+            active_ids = {
+                job_id
+                for job_id, job in jobs.items()
+                if job.get("status") in {"queued", "running"}
+            }
+        for path in upload_root.iterdir():
+            if (
+                path.is_dir()
+                and re.fullmatch(r"(?:[0-9a-f]{8}|[0-9a-f]{32})", path.name)
+                and path.name not in active_ids
+                and path.stat().st_mtime < cutoff
+            ):
+                shutil.rmtree(path, ignore_errors=True)
+
+
+def _reserve_job(job_id: str, geo_id: str, job_dir: str, step: str, client_ip: str):
+    """Enforce per-client and global concurrency limits before accepting a job."""
+    now = time.time()
+    with _jobs_lock:
+        for ip, timestamps in list(_job_requests.items()):
+            kept = [timestamp for timestamp in timestamps if now - timestamp < 3600]
+            if kept:
+                _job_requests[ip] = kept
+            else:
+                _job_requests.pop(ip, None)
+
+        recent = [
+            timestamp
+            for timestamp in _job_requests.get(client_ip, [])
+            if now - timestamp < 3600
+        ]
+        if len(recent) >= MAX_JOBS_PER_IP_PER_HOUR:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many analyses from this address. Try again in an hour.",
+            )
+
+        active = sum(
+            job.get("status") in {"queued", "running"} for job in jobs.values()
+        )
+        if active >= MAX_ACTIVE_PIPELINES:
+            raise HTTPException(
+                status_code=429,
+                detail="The analysis service is busy. Please try again later.",
+            )
+
+        recent.append(now)
+        _job_requests[client_ip] = recent
+        jobs[job_id] = {
+            "job_id": job_id,
+            "geo_id": geo_id,
+            "job_dir": job_dir,
+            "status": "queued",
+            "step": step,
+            "log": [],
+            "errors": [],
+            "summary": None,
+            "created_at": now,
+        }
+
+
+def _discard_reserved_job(job_id: str, job_dir: str) -> None:
+    with _jobs_lock:
+        jobs.pop(job_id, None)
+    shutil.rmtree(job_dir, ignore_errors=True)
+
+
+def _copy_upload_with_limit(file: UploadFile, destination: str) -> int:
+    size = 0
+    with open(destination, "wb") as output:
+        while chunk := file.file.read(1024 * 1024):
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+                )
+            output.write(chunk)
+    return size
+
+
+def _extract_expression_files(archive_path: str, extract_dir: str) -> list[str]:
+    allowed_ext = (".csv", ".tsv", ".txt", ".csv.gz", ".tsv.gz", ".txt.gz")
+    candidates = []
+    extracted_bytes = 0
+    root = Path(extract_dir).resolve()
+
+    with tarfile.open(archive_path, mode="r:*") as archive:
+        for member in archive:
+            if not member.isfile():
+                continue
+
+            member_path = PurePosixPath(member.name)
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise HTTPException(status_code=400, detail="Archive contains an unsafe path.")
+
+            destination = (root / Path(*member_path.parts)).resolve()
+            if destination != root and root not in destination.parents:
+                raise HTTPException(status_code=400, detail="Archive contains an unsafe path.")
+
+            if not member.name.lower().endswith(allowed_ext):
+                continue
+            if any(
+                skip in Path(member.name).name.lower()
+                for skip in ("readme", "soft", "family", "md5")
+            ):
+                continue
+
+            extracted_bytes += member.size
+            if extracted_bytes > MAX_EXTRACTED_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail="Archive expands beyond the configured extraction-size limit.",
+                )
+
+            source = archive.extractfile(member)
+            if source is None:
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with source, open(destination, "wb") as output:
+                shutil.copyfileobj(source, output)
+            candidates.append(str(destination))
+
+    return candidates
 
 
 class GEORequest(BaseModel):
@@ -122,6 +285,7 @@ def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | 
             with _jobs_lock:
                 jobs[job_id]["status"] = "error"
                 jobs[job_id]["step"]   = "Pipeline failed"
+                jobs[job_id]["finished_at"] = time.time()
             return
 
         # Read summary JSON produced by R
@@ -146,6 +310,7 @@ def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | 
         with _jobs_lock:
             jobs[job_id]["status"] = "done"
             jobs[job_id]["step"]   = "Complete"
+            jobs[job_id]["finished_at"] = time.time()
 
     # FIX 10: Distinguish "Rscript binary not found" from "R script path not found".
     #          Both raise FileNotFoundError from Popen, but for different reasons.
@@ -159,51 +324,57 @@ def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | 
             jobs[job_id]["status"] = "error"
             jobs[job_id]["step"]   = step_msg
             jobs[job_id]["errors"].append(step_msg)
+            jobs[job_id]["finished_at"] = time.time()
     except Exception as e:
         with _jobs_lock:
             jobs[job_id]["status"] = "error"
             jobs[job_id]["step"]   = str(e)
             jobs[job_id]["errors"].append(str(e))
+            jobs[job_id]["finished_at"] = time.time()
 
 
 @router.post("/run")
-def run_geo_pipeline(req: GEORequest):
+def run_geo_pipeline(req: GEORequest, request: Request):
     """
     Start the R pipeline for a given GEO ID.
     Returns a job_id to poll for status.
     """
     geo_id = req.geo_id.strip().upper()
 
-    if not geo_id.startswith("GSE"):
-        raise HTTPException(status_code=400, detail="GEO ID must start with 'GSE' (e.g. GSE280402)")
+    if not re.fullmatch(r"GSE[0-9]+", geo_id):
+        raise HTTPException(
+            status_code=400,
+            detail="GEO ID must be a valid accession (e.g. GSE280402).",
+        )
 
-    job_id  = str(uuid.uuid4())[:8]
+    cleanup_expired_jobs()
+    job_id  = uuid.uuid4().hex
     job_dir = os.path.join(UPLOAD_DIR, job_id)
-    os.makedirs(job_dir, exist_ok=True)
+    client_ip = request.client.host if request.client else "unknown"
+    _reserve_job(job_id, geo_id, job_dir, "Starting R pipeline", client_ip)
+    try:
+        os.makedirs(job_dir, exist_ok=True)
+    except OSError:
+        _discard_reserved_job(job_id, job_dir)
+        raise
 
-    with _jobs_lock:
-        jobs[job_id] = {
-            "job_id":  job_id,
-            "geo_id":  geo_id,
-            "status":  "queued",
-            "step":    "Starting R pipeline",
-            "log":     [],
-            "errors":  [],
-            "summary": None,
-        }
-
-    thread = threading.Thread(
-        target=run_r_pipeline,
-        args=(job_id, geo_id, job_dir),
-        daemon=True
-    )
-    thread.start()
+    try:
+        thread = threading.Thread(
+            target=run_r_pipeline,
+            args=(job_id, geo_id, job_dir),
+            daemon=True
+        )
+        thread.start()
+    except RuntimeError:
+        _discard_reserved_job(job_id, job_dir)
+        raise HTTPException(status_code=503, detail="Could not start the analysis worker.")
 
     return {"job_id": job_id, "geo_id": geo_id, "message": "Pipeline started"}
 
 
 @router.post("/upload-raw")
 async def run_geo_pipeline_from_file(
+    request: Request,
     file: UploadFile = File(...),
     # FIX: plain `label: str = "UPLOAD"` is NOT parsed by FastAPI from
     # multipart/form-data alongside a File() field — it must be declared with
@@ -225,7 +396,8 @@ async def run_geo_pipeline_from_file(
     # allows .tar/.tar.gz/.tgz archives too, not just flat tabular files).
     allowed_ext = (".csv", ".tsv", ".txt", ".csv.gz", ".tsv.gz", ".txt.gz",
                    ".tar", ".tar.gz", ".tgz")
-    fname_lower = file.filename.lower()
+    filename = file.filename or ""
+    fname_lower = filename.lower()
     if not fname_lower.endswith(allowed_ext):
         raise HTTPException(
             status_code=400,
@@ -233,66 +405,51 @@ async def run_geo_pipeline_from_file(
         )
 
     geo_id  = (label or "UPLOAD").strip().upper().replace(" ", "_") or "UPLOAD"
-    job_id  = str(uuid.uuid4())[:8]
+    if not re.fullmatch(r"[A-Z0-9_-]{1,32}", geo_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Label may contain only letters, numbers, underscores, and hyphens.",
+        )
+    cleanup_expired_jobs()
+    job_id  = uuid.uuid4().hex
     job_dir = os.path.join(UPLOAD_DIR, job_id)
-    os.makedirs(job_dir, exist_ok=True)
-
-    # Save the uploaded file into the job dir so the R subprocess can read it.
-    # os.path.basename strips any directory components from the client-supplied name.
-    saved_path = os.path.join(job_dir, os.path.basename(file.filename))
+    client_ip = request.client.host if request.client else "unknown"
+    _reserve_job(job_id, geo_id, job_dir, "Starting R pipeline (raw upload)", client_ip)
     try:
-        with open(saved_path, "wb") as out_f:
-            shutil.copyfileobj(file.file, out_f)
+        os.makedirs(job_dir, exist_ok=True)
+        # Use only the client filename's leaf component.
+        saved_path = os.path.join(job_dir, os.path.basename(filename))
+        _copy_upload_with_limit(file, saved_path)
+
+        raw_path = saved_path
+        if fname_lower.endswith((".tar", ".tar.gz", ".tgz")):
+            extract_dir = os.path.join(job_dir, "extracted")
+            os.makedirs(extract_dir, exist_ok=True)
+            try:
+                candidates = _extract_expression_files(saved_path, extract_dir)
+            except (tarfile.TarError, OSError) as e:
+                raise HTTPException(status_code=400, detail=f"Could not extract archive: {e}")
+
+            if not candidates:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No usable expression file (.csv/.tsv/.txt) found inside the archive."
+                )
+            raw_path = candidates[0]
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
+        _discard_reserved_job(job_id, job_dir)
+        raise
 
-    # FIX: archives need to be extracted before the R script can find a
-    # readable tabular file inside them — core_deg_engine.R's upload-mode
-    # branch expects a single file path, not an archive. Extract here and
-    # point raw_path at the best candidate file found inside.
-    raw_path = saved_path
-    if fname_lower.endswith((".tar", ".tar.gz", ".tgz")):
-        import tarfile
-        extract_dir = os.path.join(job_dir, "extracted")
-        os.makedirs(extract_dir, exist_ok=True)
-        try:
-            with tarfile.open(saved_path) as tf:
-                tf.extractall(extract_dir)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Could not extract archive: {e}")
-
-        candidates = []
-        for root, _, files in os.walk(extract_dir):
-            for fn in files:
-                fn_lower = fn.lower()
-                if fn_lower.endswith((".csv", ".tsv", ".txt", ".csv.gz", ".tsv.gz", ".txt.gz")) \
-                   and not any(skip in fn_lower for skip in ("readme", "soft", "family", "md5")):
-                    candidates.append(os.path.join(root, fn))
-
-        if not candidates:
-            raise HTTPException(
-                status_code=400,
-                detail="No usable expression file (.csv/.tsv/.txt) found inside the archive."
-            )
-        raw_path = candidates[0]
-
-    with _jobs_lock:
-        jobs[job_id] = {
-            "job_id":  job_id,
-            "geo_id":  geo_id,
-            "status":  "queued",
-            "step":    "Starting R pipeline (raw upload)",
-            "log":     [],
-            "errors":  [],
-            "summary": None,
-        }
-
-    thread = threading.Thread(
-        target=run_r_pipeline,
-        args=(job_id, geo_id, job_dir, raw_path),
-        daemon=True
-    )
-    thread.start()
+    try:
+        thread = threading.Thread(
+            target=run_r_pipeline,
+            args=(job_id, geo_id, job_dir, raw_path),
+            daemon=True
+        )
+        thread.start()
+    except RuntimeError:
+        _discard_reserved_job(job_id, job_dir)
+        raise HTTPException(status_code=503, detail="Could not start the analysis worker.")
 
     return {"job_id": job_id, "geo_id": geo_id, "message": "Pipeline started from uploaded file"}
 
@@ -300,6 +457,7 @@ async def run_geo_pipeline_from_file(
 @router.get("/status/{job_id}")
 def get_status(job_id: str):
     """Poll this endpoint to get pipeline progress."""
+    cleanup_expired_jobs()
     with _jobs_lock:
         if job_id not in jobs:
             raise HTTPException(status_code=404, detail="Job not found")
