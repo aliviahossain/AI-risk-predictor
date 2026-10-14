@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8000"
+      UPLOAD_DIR: /data/uploads
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS to your Netlify site origin}
+      MAX_ACTIVE_PIPELINES: "1"
+      MAX_UPLOAD_BYTES: "104857600"
+      MAX_EXTRACTED_BYTES: "536870912"
+      MAX_DEG_CSV_BYTES: "26214400"
+      MAX_JOBS_PER_IP_PER_HOUR: "5"
+      JOB_RETENTION_HOURS: "24"
+    volumes:
+      - uploads:/data/uploads
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN to a DNS name pointing at this VM}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
+volumes:
+  uploads:
+  caddy-data:
+  caddy-config:

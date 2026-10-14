@@ -162,6 +162,58 @@ npm --prefix frontend run build
 
 ---
 
+## Public Demo Deployment (Netlify + Render Free)
+
+For a no-monthly-payment public demo, deploy the frontend to Netlify and the
+API to a Render Free web service. Render Free services sleep when idle and
+have ephemeral storage; this is not reliable always-on production hosting.
+
+### 1. Deploy the API to Render
+
+Import this repository into Render and create a **Blueprint** from the
+`render.yaml` file. It configures the backend Docker image, health check,
+single-pipeline limit, upload limits, and cleanup policy. The image installs
+R and Bioconductor dependencies during its initial build, so the first deploy
+may take several minutes. Wait for the service health check to pass, then copy
+its public URL, for example `https://ai-risk-predictor-api.onrender.com`.
+
+### 2. Deploy the frontend to Netlify
+
+Import the same repository into Netlify. The checked-in `netlify.toml`
+configures the `frontend` base directory, `npm run build`, and `build` publish
+directory. Set this environment variable in the Netlify site settings:
+
+```text
+REACT_APP_API_URL=https://ai-risk-predictor-api.onrender.com
+```
+
+Use the actual Render URL, save the variable, and trigger a new Netlify deploy.
+The API currently allows cross-origin requests from public websites.
+
+### Important limitations before sharing
+
+- Render Free spins down after inactivity. The first request after sleep may
+  take around a minute while the service wakes up.
+- Render Free has no persistent disk. Uploads, cached GEO downloads, and
+  results can disappear when the service restarts or sleeps.
+- The service allows one analysis at a time, limits raw uploads to 100 MB,
+  archive extraction to 512 MB, DEG CSV files to 25 MB, and analysis starts to
+  five per client IP per hour. Completed results are cleaned up after 24 hours.
+- Job status is in memory. A service restart interrupts active jobs and loses
+  their status.
+- The API is public and does not require sign-in. These limits reduce casual
+  abuse but are not authentication or protection from distributed abuse.
+- The free instance has limited memory/CPU. Large GEO datasets may fail or run
+  slowly; inspect the Render service logs if an analysis fails.
+- Never upload sensitive or identifying data to this public demo.
+
+For an always-on service with persistent storage, deploy the same Docker image
+to a VM with adequate disk, RAM, backups, and monitoring. Oracle Always Free
+may be an option if account verification and free capacity are available; the
+free VM is still not an uptime guarantee.
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |
