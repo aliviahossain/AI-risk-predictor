@@ -133,6 +133,35 @@ Make sure `Rscript` is on your system PATH.
 
 ---
 
+## Running Tests
+
+Install the backend test dependencies once:
+
+```powershell
+python -m pip install -r backend/requirements-dev.txt
+```
+
+Run backend API tests, the synthetic R pipeline integration test, and frontend
+tests together from the project root:
+
+```powershell
+.\test.ps1
+```
+
+The R integration test runs only when `Rscript` and the `limma`, `edgeR`, and
+`pheatmap` packages are available. Set `RSCRIPT_PATH` if `Rscript` is not on
+PATH. Pipeline runtime is included in pytest's duration report.
+
+To run only one suite:
+
+```powershell
+python -m pytest -q --durations=10
+npm --prefix frontend test -- --watchAll=false --runInBand
+npm --prefix frontend run build
+```
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |

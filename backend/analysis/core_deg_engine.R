@@ -9,6 +9,10 @@ if (length(args) < 2) { cat("Usage: Rscript core_deg_engine.R <GEO_ID> <output_d
 geo_id     <- toupper(trimws(args[1]))
 output_dir <- args[2]
 raw_file   <- if (length(args) >= 3) args[3] else NULL
+script_arg <- grep("^--file=", commandArgs(trailingOnly=FALSE), value=TRUE)
+if (length(script_arg) != 1) stop("Could not determine the analysis script path")
+script_dir <- dirname(normalizePath(sub("^--file=", "", script_arg)))
+source(file.path(script_dir, "pipeline_utils.R"))
 
 cat("=== DEG PIPELINE STARTED ===\n")
 cat("GEO ID    :", geo_id, "\n")
@@ -20,6 +24,8 @@ cat("Raw file  :", if (is.null(raw_file)) "none (will download from GEO)" else r
 # =============================================================================
 options(warn=1, timeout=600)
 
+using_raw <- !is.null(raw_file) && file.exists(raw_file)
+
 load_pkg <- function(pkg) {
   if (!requireNamespace(pkg, quietly=TRUE)) {
     cat("  Installing", pkg, "...\n")
@@ -30,13 +36,11 @@ load_pkg <- function(pkg) {
   suppressPackageStartupMessages(library(pkg, character.only=TRUE))
   cat("  [OK]", pkg, "\n")
 }
-for (p in c("GEOquery","limma","edgeR","pheatmap","Biobase")) load_pkg(p)
+load_pkg("limma")
 
 # =============================================================================
 # 1. Metadata — skip if raw file provided
 # =============================================================================
-using_raw <- !is.null(raw_file) && file.exists(raw_file)
-
 probe_to_gene <- NULL   # will be populated from GPL annotation when available
 
 if (using_raw) {
@@ -45,6 +49,8 @@ if (using_raw) {
   gse      <- NULL
   metadata <- NULL
 } else {
+  load_pkg("GEOquery")
+  load_pkg("Biobase")
   cat("\nSTEP 1: Downloading GEO metadata...\n")
   gse_list <- tryCatch(
     getGEO(geo_id, destdir=output_dir, getGPL=TRUE, AnnotGPL=TRUE),
@@ -104,15 +110,42 @@ if (using_raw) {
   all_files <- dest
   cat("  Using uploaded file:", basename(raw_file), "\n")
 } else {
-  cat("  Downloading supplementary files...\n")
-  tryCatch(
-    getGEOSuppFiles(geo_id, baseDir=output_dir),
-    error=function(e) cat("  WARN:", conditionMessage(e), "\n")
-  )
   geo_folder <- file.path(output_dir, geo_id)
-  all_files  <- if (dir.exists(geo_folder))
-                  list.files(geo_folder, full.names=TRUE, recursive=TRUE)
-                else character(0)
+  dir.create(geo_folder, recursive=TRUE, showWarnings=FALSE)
+  all_files <- list.files(geo_folder, full.names=TRUE, recursive=TRUE)
+  cached_file <- find_expression_file(basename(all_files))
+
+  if (is.na(cached_file)) {
+    cat("  Checking GEO supplementary file listing...\n")
+    supp_listing <- tryCatch(
+      getGEOSuppFiles(geo_id, baseDir=output_dir, fetch_files=FALSE),
+      error=function(e) {
+        cat("  WARN supplementary listing:", conditionMessage(e), "\n")
+        NULL
+      }
+    )
+    candidate <- if (!is.null(supp_listing) && nrow(supp_listing) > 0)
+                   find_expression_file(supp_listing$fname)
+                 else NA_character_
+
+    if (!is.na(candidate)) {
+      cat("  Downloading selected expression file:", candidate, "\n")
+      tryCatch(
+        getGEOSuppFiles(
+          geo_id,
+          baseDir=output_dir,
+          filter_regex=glob2rx(candidate)
+        ),
+        error=function(e) cat("  WARN supplementary download:", conditionMessage(e), "\n")
+      )
+    } else {
+      cat("  No matching supplementary expression file found\n")
+    }
+  } else {
+    cat("  Using cached supplementary file:", cached_file, "\n")
+  }
+
+  all_files <- list.files(geo_folder, full.names=TRUE, recursive=TRUE)
   cat("  Files found:", length(all_files), "\n")
   for (f in all_files) cat("    -", basename(f), "\n")
 }
@@ -123,26 +156,6 @@ if (using_raw) {
 cat("\nSTEP 3: Reading expression data...\n")
 ex_matrix <- NULL
 data_type <- "unknown"
-
-find_file <- function(files) {
-  EXCL <- c("README","SOFT","soft","family","GPL","md5","\\.pdf$","\\.png$","\\.json$")
-  pats <- c(
-    "count[s]?\\.(tsv|txt|csv)(\\.gz)?$",
-    "count[s]?[._].*\\.(tsv|txt|csv)(\\.gz)?$",
-    "raw.*count.*\\.(tsv|txt|csv)(\\.gz)?$",
-    "expr.*\\.(tsv|txt|csv)(\\.gz)?$",
-    "matrix.*\\.(tsv|txt|csv)(\\.gz)?$",
-    "\\.tsv(\\.gz)?$",
-    "\\.txt(\\.gz)?$",
-    "\\.csv(\\.gz)?$"
-  )
-  for (pat in pats) {
-    hits <- files[grepl(pat, files, ignore.case=TRUE)]
-    hits <- hits[!grepl(paste(EXCL, collapse="|"), hits, ignore.case=TRUE)]
-    if (length(hits) > 0) return(hits[1])
-  }
-  NA_character_
-}
 
 read_to_matrix <- function(filepath) {
   tryCatch({
@@ -226,7 +239,7 @@ read_to_matrix <- function(filepath) {
 }
 
 # Try supplementary/uploaded file
-sf <- find_file(all_files)
+sf <- find_expression_file(all_files)
 if (!is.na(sf)) {
   cat("  [A] File:", basename(sf), "\n")
   mat <- read_to_matrix(sf)
@@ -263,12 +276,14 @@ if (is.null(ex_matrix)) {
 cat("\nSTEP 4: Cleaning matrix...\n")
 cat("  Before:", nrow(ex_matrix), "x", ncol(ex_matrix), "\n")
 
-num_ok    <- apply(ex_matrix, 2, function(x) is.numeric(x) && sum(!is.na(x)) > 0)
+num_ok    <- colSums(!is.na(ex_matrix)) > 0
 ex_matrix <- ex_matrix[, num_ok, drop=FALSE]
 cs        <- colSums(ex_matrix, na.rm=TRUE)
 ex_matrix <- ex_matrix[, cs > 0, drop=FALSE]
 rs        <- rowSums(ex_matrix, na.rm=TRUE)
-rv        <- apply(ex_matrix, 1, var, na.rm=TRUE)
+row_counts <- rowSums(!is.na(ex_matrix))
+row_squares <- rowSums(ex_matrix * ex_matrix, na.rm=TRUE)
+rv <- (row_squares - rs^2 / row_counts) / (row_counts - 1)
 ex_matrix <- ex_matrix[rs > 0 & !is.na(rv) & rv > 0, , drop=FALSE]
 
 n_samples <- ncol(ex_matrix)
@@ -368,6 +383,8 @@ cat("\nSTEP 6: DGE analysis (", data_type, ")...\n")
 design <- model.matrix(~group)
 v      <- NULL
 
+if (data_type == "counts") load_pkg("edgeR")
+
 fit <- tryCatch({
   if (data_type == "counts") {
     keep    <- filterByExpr(ex_matrix, group)
@@ -453,6 +470,7 @@ cat("  Saved:", basename(full_csv), "\n")
 # 8. Heatmap
 # =============================================================================
 cat("\nSTEP 8: Heatmap...\n")
+load_pkg("pheatmap")
 heatmap_file <- ""
 tryCatch({
   top_n    <- min(28, nrow(results))

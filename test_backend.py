@@ -3,8 +3,8 @@ import json
 
 BASE_URL = "http://localhost:8000"
 
-def test_all_endpoints():
-    """Test all GEO endpoints"""
+def run_endpoint_smoke_tests():
+    """Manually check that a locally running backend exposes its endpoints."""
     
     print("=" * 50)
     print("Testing GEO API Endpoints")
@@ -75,4 +75,4 @@ def test_all_endpoints():
     return True
 
 if __name__ == "__main__":
-    test_all_endpoints()
+    run_endpoint_smoke_tests()
