@@ -8,6 +8,16 @@ const STORE   = "session";
 const KEY     = "current";
 // Matches the backend's job retention, after which heatmaps are no longer served.
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// Some browsers (strict privacy modes, headless) never answer indexedDB.open
+// at all, so every operation gives up after this long.
+const TIMEOUT_MS = 1500;
+
+function withTimeout(promise) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("IndexedDB timed out")), TIMEOUT_MS)),
+  ]);
+}
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -20,14 +30,14 @@ function openDb() {
 }
 
 async function withStore(mode, fn) {
-  const db = await openDb();
+  const db = await withTimeout(openDb());
   try {
-    return await new Promise((resolve, reject) => {
+    return await withTimeout(new Promise((resolve, reject) => {
       const tx  = db.transaction(STORE, mode);
       const req = fn(tx.objectStore(STORE));
       tx.oncomplete = () => resolve(req.result);
       tx.onerror = tx.onabort = () => reject(tx.error);
-    });
+    }));
   } finally {
     db.close();
   }
