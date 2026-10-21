@@ -78,7 +78,7 @@ export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05, p
   return (
     <div style={{width:"100%", overflowX:"auto"}}>
       <svg data-chart="volcano" viewBox={`0 0 ${W} ${H}`}
-        style={{width:"100%",maxWidth:W,display:"block",margin:"0 auto",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        style={{width:"100%",maxWidth:W,display:"block",margin:"0 auto",fontFamily:"var(--font)"}}>
         <g transform={`translate(${PAD.left},${PAD.top})`}>
           <rect x={0} y={0} width={PW} height={PH} fill="#fafafa" rx={6} stroke="#e5e7eb"/>
 
@@ -117,7 +117,7 @@ export default function VolcanoPlot({ genes, fcThreshold=0.1, pThreshold=0.05, p
             <g key={i}>
               <line x1={p.cx} y1={p.cy-5} x2={p.cx} y2={p.cy-15} stroke={C[p.type]} strokeWidth={1}/>
               <text x={p.cx} y={p.cy-17} fill={C[p.type]} fontSize={9} fontWeight="700"
-                textAnchor="middle" fontFamily="'JetBrains Mono',monospace">
+                textAnchor="middle" fontFamily="var(--mono)">
                 {p.geneSymbol}
               </text>
             </g>

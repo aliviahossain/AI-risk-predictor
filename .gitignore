@@ -96,3 +96,7 @@ __pypackages__/
 
 # GitHub Actions temporary
 .github/workflows/**/action.log
+
+# Newsletter subscribers (backend DATA_DIR)
+backend/data/
+data/

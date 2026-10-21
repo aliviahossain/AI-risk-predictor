@@ -187,8 +187,9 @@ directory. Set this environment variable in the Netlify site settings:
 REACT_APP_API_URL=https://ai-risk-predictor-api.onrender.com
 ```
 
-Use the actual Render URL, save the variable, and trigger a new Netlify deploy.
-The API currently allows cross-origin requests from public websites.
+The same value is set in `netlify.toml`; replace it with the actual Render URL
+if Render assigned a different hostname. Save changes and trigger a new Netlify
+deploy. The API currently allows cross-origin requests from public websites.
 
 ### Important limitations before sharing
 

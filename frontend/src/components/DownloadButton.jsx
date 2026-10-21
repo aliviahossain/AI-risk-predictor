@@ -36,9 +36,9 @@ export default function DownloadButton({ genes, filename="DEG", fcThreshold=0.5,
 
   const btn = (label, onClick, accent) => (
     <button onClick={onClick} style={{
-      padding:"8px 16px", borderRadius:9, border:`1px solid ${accent}22`,
+      padding:"8px 16px", borderRadius:0, border:`1px solid ${accent}22`,
       background:`${accent}11`, color:accent, fontWeight:700, fontSize:12,
-      cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif",
+      cursor:"pointer", fontFamily:"var(--font)",
       transition:"all 0.15s", whiteSpace:"nowrap"
     }}
     onMouseEnter={e=>{e.target.style.background=`${accent}22`;}}
@@ -48,9 +48,9 @@ export default function DownloadButton({ genes, filename="DEG", fcThreshold=0.5,
 
   return (
     <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-      {btn("⬇ Full CSV",     downloadCSV,    "#6366f1")}
-      {btn("⬇ Sig. genes",   downloadSigCSV, "#16a34a")}
-      {btn("🖼 Volcano SVG", downloadSVG,    "#f59e0b")}
+      {btn("Full CSV", downloadCSV,    "#0b5394")}
+      {btn("Significant genes", downloadSigCSV, "#16a34a")}
+      {btn("Volcano SVG", downloadSVG,    "#f59e0b")}
     </div>
   );
 }

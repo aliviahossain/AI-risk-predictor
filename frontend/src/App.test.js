@@ -44,3 +44,11 @@ test('provides safe default plot ranges for empty data', () => {
     suggestedP: 0.05,
   });
 });
+
+test('session cache fails soft when IndexedDB is unavailable', async () => {
+  const { loadSession, saveSession, clearSession } = require('./utils/sessionCache');
+  // jsdom has no IndexedDB, like a browser with storage blocked.
+  await expect(saveSession({ genes: [], filename: 'x.csv', jobId: null })).resolves.toBeUndefined();
+  await expect(loadSession()).resolves.toBeNull();
+  await expect(clearSession()).resolves.toBeUndefined();
+});

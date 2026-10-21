@@ -10,11 +10,11 @@ import { API } from "../config";
 import "./ResultsPage.css";
 
 const BASE_TABS = [
-  { id:"volcano",  label:"🌋 Volcano Plot" },
-  { id:"ma",       label:"📈 MA Plot"      },
-  { id:"topgenes", label:"🏆 Top Genes"    },
-  { id:"table",    label:"🗂 Gene Table"   },
-  { id:"summary",  label:"📋 Summary"      },
+  { id:"volcano",  label:"Volcano plot" },
+  { id:"ma",       label:"MA plot" },
+  { id:"topgenes", label:"Top genes" },
+  { id:"table",    label:"Gene table" },
+  { id:"summary",  label:"Summary" },
 ];
 
 // Standard scientific P thresholds only
@@ -41,30 +41,29 @@ export default function ResultsPage({ genes, filename, jobId, onReset }) {
     : 2;
 
   const TABS = jobId
-    ? [...BASE_TABS, { id:"heatmap", label:"🖼 Heatmap" }]
+    ? [...BASE_TABS, { id:"heatmap", label:"Heatmap" }]
     : BASE_TABS;
 
   return (
     <div className="rp-root">
-      <header className="rp-header">
-        <div className="rp-logo">
-          <span className="rp-logo-icon">🧬</span>
-          <div>
-            <div className="rp-logo-title">DEG Analysis Viewer</div>
-            <div className="rp-logo-file">{filename}</div>
+      <div className="rp-header">
+        <div className="rp-header-inner">
+          <div className="rp-logo">
+            <div className="rp-logo-title">Analysis results</div>
+            <div className="rp-logo-file" title={filename}>{filename}</div>
           </div>
+          <button className="sc-btn sc-btn-outline rp-reset" onClick={onReset}>New analysis</button>
         </div>
-        <button className="rp-reset" onClick={onReset}>↩ New file</button>
-      </header>
+      </div>
 
       <main className="rp-main">
         {/* Summary cards */}
         <div className="rp-cards">
           {[
-            { label:"Total Genes",       value:summary.total, accent:"#6366f1", bg:"#eef2ff" },
+            { label:"Total Genes",       value:summary.total, accent:"#0b5394", bg:"#eaf1f8" },
             { label:"↑ Upregulated",     value:summary.up,    accent:"#ef4444", bg:"#fef2f2" },
             { label:"↓ Downregulated",   value:summary.down,  accent:"#3b82f6", bg:"#eff6ff" },
-            { label:"— Not Significant", value:summary.ns,    accent:"#6b7280", bg:"#f9fafb" },
+            { label:"Not significant", value:summary.ns,    accent:"#6b7280", bg:"#f9fafb" },
           ].map((c) => (
             <div key={c.label} className="rp-card"
               style={{background:c.bg, borderColor:c.accent+"33"}}>
@@ -83,7 +82,7 @@ export default function ResultsPage({ genes, filename, jobId, onReset }) {
           <div className="rp-threshold">
             <label>
               FC Threshold
-              <strong style={{color:"#6366f1"}}>
+              <strong style={{color:"#0b5394"}}>
                 {fcThreshold === 0 ? " None (show all)" : ` ±${fcThreshold}`}
               </strong>
               <span className="rp-range-hint"> logFC range: {range.fcMin.toFixed(2)} to {range.fcMax.toFixed(2)}</span>
@@ -104,7 +103,7 @@ export default function ResultsPage({ genes, filename, jobId, onReset }) {
           <div className="rp-threshold">
             <label>
               {pValueType === "adj" ? "adj.P.Val (FDR)" : "P.Value (raw)"}
-              <strong style={{color:"#6366f1"}}> {pThreshold}</strong>
+              <strong style={{color:"#0b5394"}}> {pThreshold}</strong>
             </label>
             {/* raw vs adj toggle */}
             <div className="rp-p-btns" style={{marginBottom:8}}>
@@ -231,8 +230,7 @@ export default function ResultsPage({ genes, filename, jobId, onReset }) {
               </div>
               {summary.up === 0 && summary.down === 0 && (
                 <div className="rp-no-sig">
-                  <div className="rp-no-sig-icon">ℹ️</div>
-                  <div>
+                                    <div>
                     <strong>No significant genes at current thresholds</strong>
                     <p>
                       No genes pass {pValueType === "adj" ? "adj.P.Val" : "P.Value"} &lt; {pThreshold}
