@@ -15,9 +15,10 @@ export default function App() {
   const [filename, setFilename] = useState("");
   const [jobId,    setJobId]    = useState(null);
   const [route,    setRoute]    = useState(currentRoute);
-  const [restoring, setRestoring] = useState(true);
 
   // Restore the last analysis so a page reload doesn't lose loaded results.
+  // Never blocks rendering: the upload page shows at once and results swap in
+  // only if storage answers.
   useEffect(() => {
     let active = true;
     loadSession().then(session => {
@@ -27,7 +28,6 @@ export default function App() {
         setFilename(f => f || session.filename);
         setJobId(j => j ?? session.jobId);
       }
-      setRestoring(false);
     });
     return () => { active = false; };
   }, []);
@@ -59,8 +59,7 @@ export default function App() {
       {route === ROUTES.help       && <HelpPage />}
       {route === ROUTES.newsletter && <NewsletterPage />}
       {route === ROUTES.home && (
-        restoring && !genes ? <main className="app-restoring" aria-busy="true" />
-        : genes ? <ResultsPage genes={genes} filename={filename} jobId={jobId} onReset={handleReset} />
+        genes ? <ResultsPage genes={genes} filename={filename} jobId={jobId} onReset={handleReset} />
         : <UploadPage onDataLoaded={handleDataLoaded} />)}
       <SiteFooter />
     </>

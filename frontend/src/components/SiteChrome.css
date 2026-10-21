@@ -158,6 +158,3 @@
 @media (prefers-reduced-motion: reduce) {
   .hb-slide { transition: opacity 1.2s ease; transform: none; }
 }
-
-/* Placeholder while a saved session is read back on reload (a few ms) */
-.app-restoring { min-height: 100vh; background: var(--canvas); }

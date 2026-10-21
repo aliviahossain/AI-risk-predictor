@@ -11,20 +11,5 @@
   to = "/index.html"
   status = 200
 
-# Build output in /static is content-hashed, so it can be cached forever;
-# a new deploy produces new filenames.
-[[headers]]
-  for = "/static/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-# The HTML entry point must always be revalidated so new deploys show up.
-[[headers]]
-  for = "/index.html"
-  [headers.values]
-    Cache-Control = "no-cache"
-
-[[headers]]
-  for = "/"
-  [headers.values]
-    Cache-Control = "no-cache"
+# Response headers live in frontend/public/_headers so they also apply to
+# manual drag-and-drop deploys.
