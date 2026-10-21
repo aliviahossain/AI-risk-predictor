@@ -135,6 +135,57 @@ def test_geo_run_rate_limits_analysis_starts(client, monkeypatch):
     assert response.status_code == 429
 
 
+def test_geo_run_reuses_finished_job_without_counting_toward_limits(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(geo, "MAX_JOBS_PER_IP_PER_HOUR", 1)
+    csv_path = tmp_path / "GSE12345_DEGs_Full.csv"
+    csv_path.write_text(CSV_CONTENT)
+    with geo._jobs_lock:
+        geo._job_requests["testclient"] = [geo.time.time()]
+        geo.jobs["cached-job"] = {
+            "job_id": "cached-job", "geo_id": "GSE12345", "source": "geo",
+            "status": "done", "csv_path": str(csv_path), "created_at": geo.time.time(),
+        }
+
+    response = client.post("/geo/run", json={"geo_id": "gse12345"})
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "cached-job"
+    assert response.json()["cached"] is True
+
+
+def test_geo_run_joins_job_already_running_for_same_accession(client):
+    with geo._jobs_lock:
+        geo.jobs["running-job"] = {
+            "job_id": "running-job", "geo_id": "GSE12345", "source": "geo",
+            "status": "running", "created_at": geo.time.time(),
+        }
+
+    response = client.post("/geo/run", json={"geo_id": "GSE12345"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "job_id": "running-job", "geo_id": "GSE12345",
+        "cached": False, "message": "Pipeline already running",
+    }
+
+
+def test_geo_run_never_reuses_raw_upload_jobs(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(geo, "run_r_pipeline", lambda *args, **kwargs: None)
+    csv_path = tmp_path / "GSE12345_DEGs_Full.csv"
+    csv_path.write_text(CSV_CONTENT)
+    with geo._jobs_lock:
+        geo.jobs["private-upload"] = {
+            "job_id": "private-upload", "geo_id": "GSE12345", "source": "upload",
+            "status": "done", "csv_path": str(csv_path), "created_at": geo.time.time(),
+        }
+
+    response = client.post("/geo/run", json={"geo_id": "GSE12345"})
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] != "private-upload"
+    assert response.json()["cached"] is False
+
+
 def test_raw_upload_rejects_files_over_configured_limit(client, monkeypatch):
     monkeypatch.setattr(geo, "MAX_UPLOAD_BYTES", 4)
 
@@ -195,3 +246,24 @@ def test_cleanup_removes_expired_job_files(client, tmp_path):
 
     assert job_id not in geo.jobs
     assert not job_dir.exists()
+
+
+def test_newsletter_subscribe_validates_and_dedupes(tmp_path, monkeypatch):
+    from routes import newsletter
+
+    monkeypatch.setattr(newsletter, "DATA_DIR", str(tmp_path / "data"))
+    app = FastAPI()
+    app.include_router(newsletter.router)
+    client = TestClient(app)
+
+    bad = client.post("/newsletter/subscribe", json={"email": "not-an-email"})
+    assert bad.status_code == 422
+
+    first = client.post("/newsletter/subscribe", json={"email": "Ada@Example.com", "name": "Ada"})
+    assert first.json() == {"status": "subscribed"}
+
+    again = client.post("/newsletter/subscribe", json={"email": "ada@example.com"})
+    assert again.json() == {"status": "already_subscribed"}
+
+    rows = (tmp_path / "data" / "subscribers.csv").read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 2

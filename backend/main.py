@@ -27,6 +27,8 @@ cleanup_expired_jobs()
 
 app.include_router(deg_router)
 app.include_router(geo_router)
+# Newsletter subscriptions are paused; re-enable by including
+# routes.newsletter.router here.
 
 @app.get("/")
 def root():

@@ -123,7 +123,6 @@ export default function RawUploadForm({ onAnalysisComplete }) {
           </div>
         ) : (
           <>
-            <div className="raw-drop-icon">📄</div>
             <p className="raw-drop-main">Drop your raw GEO count file here</p>
             <p className="raw-drop-hint">.csv · .tsv · .txt · .gz supported</p>
             <div className="raw-browse-btn">Browse files</div>
@@ -157,7 +156,7 @@ export default function RawUploadForm({ onAnalysisComplete }) {
           <div className="raw-progress-header">
             <span>Pipeline Progress</span>
             <span className={`raw-pill ${jobStatus}`}>
-              {jobStatus==="done"?"✓ Done":jobStatus==="error"?"✗ Error":"⏳ Running"}
+              {jobStatus==="done"?"Done":jobStatus==="error"?"Error":"Running"}
             </span>
           </div>
           <div className="raw-steps">
@@ -182,10 +181,10 @@ export default function RawUploadForm({ onAnalysisComplete }) {
       )}
 
       {status && !error && (
-        <div className="raw-status">🧬 {status}</div>
+        <div className="raw-status">{status}</div>
       )}
       {error && (
-        <div className="raw-error">⚠ {error}</div>
+        <div className="raw-error">{error}</div>
       )}
 
       <div className="raw-hint-box">

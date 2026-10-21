@@ -88,7 +88,9 @@ def cleanup_expired_jobs(now: float | None = None) -> None:
                 shutil.rmtree(path, ignore_errors=True)
 
 
-def _reserve_job(job_id: str, geo_id: str, job_dir: str, step: str, client_ip: str):
+def _reserve_job(
+    job_id: str, geo_id: str, job_dir: str, step: str, client_ip: str, source: str = "geo"
+):
     """Enforce per-client and global concurrency limits before accepting a job."""
     now = time.time()
     with _jobs_lock:
@@ -124,6 +126,7 @@ def _reserve_job(job_id: str, geo_id: str, job_dir: str, step: str, client_ip: s
         jobs[job_id] = {
             "job_id": job_id,
             "geo_id": geo_id,
+            "source": source,
             "job_dir": job_dir,
             "status": "queued",
             "step": step,
@@ -132,6 +135,26 @@ def _reserve_job(job_id: str, geo_id: str, job_dir: str, step: str, client_ip: s
             "summary": None,
             "created_at": now,
         }
+
+
+def _find_reusable_geo_job(geo_id: str) -> tuple[str, dict] | None:
+    """
+    Return a GEO-accession job for geo_id that is finished or still running, so
+    repeat requests reuse it instead of re-running the R pipeline. Raw uploads
+    are never shared: they hold one user's private data.
+    """
+    with _jobs_lock:
+        candidates = [
+            (job_id, job)
+            for job_id, job in jobs.items()
+            if job.get("source") == "geo"
+            and job.get("geo_id") == geo_id
+            and job.get("status") in {"queued", "running", "done"}
+        ]
+    for job_id, job in sorted(candidates, key=lambda c: c[1].get("created_at", 0), reverse=True):
+        if job["status"] != "done" or os.path.exists(job.get("csv_path") or ""):
+            return job_id, dict(job)
+    return None
 
 
 def _discard_reserved_job(job_id: str, job_dir: str) -> None:
@@ -348,6 +371,16 @@ def run_geo_pipeline(req: GEORequest, request: Request):
         )
 
     cleanup_expired_jobs()
+    reusable = _find_reusable_geo_job(geo_id)
+    if reusable:
+        job_id, job = reusable
+        return {
+            "job_id": job_id,
+            "geo_id": geo_id,
+            "cached": job["status"] == "done",
+            "message": "Using cached results" if job["status"] == "done" else "Pipeline already running",
+        }
+
     job_id  = uuid.uuid4().hex
     job_dir = os.path.join(UPLOAD_DIR, job_id)
     client_ip = request.client.host if request.client else "unknown"
@@ -369,7 +402,7 @@ def run_geo_pipeline(req: GEORequest, request: Request):
         _discard_reserved_job(job_id, job_dir)
         raise HTTPException(status_code=503, detail="Could not start the analysis worker.")
 
-    return {"job_id": job_id, "geo_id": geo_id, "message": "Pipeline started"}
+    return {"job_id": job_id, "geo_id": geo_id, "cached": False, "message": "Pipeline started"}
 
 
 @router.post("/upload-raw")
@@ -414,7 +447,9 @@ async def run_geo_pipeline_from_file(
     job_id  = uuid.uuid4().hex
     job_dir = os.path.join(UPLOAD_DIR, job_id)
     client_ip = request.client.host if request.client else "unknown"
-    _reserve_job(job_id, geo_id, job_dir, "Starting R pipeline (raw upload)", client_ip)
+    _reserve_job(
+        job_id, geo_id, job_dir, "Starting R pipeline (raw upload)", client_ip, source="upload"
+    )
     try:
         os.makedirs(job_dir, exist_ok=True)
         # Use only the client filename's leaf component.
@@ -475,6 +510,11 @@ def get_status(job_id: str):
     }
 
 
+# Job outputs are immutable once written, so clients may cache them until the
+# job expires. "private" keeps shared proxies from storing users' results.
+_RESULT_CACHE_HEADERS = {"Cache-Control": f"private, max-age={JOB_RETENTION_HOURS * 3600}, immutable"}
+
+
 @router.get("/download/{job_id}")
 def download_csv(job_id: str):
     """Download the full DEG results CSV produced by the R pipeline."""
@@ -487,7 +527,9 @@ def download_csv(job_id: str):
     if not csv_path or not os.path.exists(csv_path):
         raise HTTPException(status_code=404, detail="CSV not ready yet")
 
-    return FileResponse(path=csv_path, filename=csv_filename, media_type="text/csv")
+    return FileResponse(
+        path=csv_path, filename=csv_filename, media_type="text/csv", headers=_RESULT_CACHE_HEADERS
+    )
 
 
 @router.get("/heatmap/{job_id}")
@@ -501,4 +543,4 @@ def get_heatmap(job_id: str):
     if not heatmap_path or not os.path.exists(heatmap_path):
         raise HTTPException(status_code=404, detail="Heatmap not ready yet")
 
-    return FileResponse(path=heatmap_path, media_type="image/png")
+    return FileResponse(path=heatmap_path, media_type="image/png", headers=_RESULT_CACHE_HEADERS)
