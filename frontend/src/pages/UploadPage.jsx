@@ -45,6 +45,8 @@ const HOW_STEPS = [
   ["Explore the results", "Filter, sort and visualize significant genes, then export what you need."],
 ];
 
+const FEEDBACK_URL = "https://docs.google.com/forms/d/e/1FAIpQLSe4pzWJtWDbCdj1LBhJhGCEuGB2PYFqz-PwCBchPnP-17tVTg/viewform";
+
 const Icon = ({ children }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
@@ -319,6 +321,23 @@ export default function UploadPage({ onDataLoaded }) {
               </li>
             ))}
           </ol>
+        </div>
+      </section>
+
+      {/* ── Feedback ── */}
+      <section className="up-section up-feedback">
+        <div className="up-container up-feedback-inner">
+          <div>
+            <h2 className="up-h2 up-feedback-title">We'd love your feedback</h2>
+            <p className="up-feedback-text">
+              Tried the pipeline? Please take a minute to tell us what you liked, what you didn't,
+              and what you'd like to see next. Your feedback is highly appreciated and
+              helps us improve the tool for everyone.
+            </p>
+          </div>
+          <a href={FEEDBACK_URL} target="_blank" rel="noopener noreferrer" className="sc-btn sc-btn-primary up-feedback-btn">
+            Share feedback
+          </a>
         </div>
       </section>
 
