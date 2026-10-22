@@ -1,4 +1,30 @@
-{$API_DOMAIN} {
+# SITE_DOMAIN serves the React build; api.SITE_DOMAIN proxies to FastAPI.
+# Caddy obtains and renews HTTPS certificates automatically once DNS points here.
+
+www.{$SITE_DOMAIN} {
+    redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+{$SITE_DOMAIN} {
     encode gzip zstd
+    root * /srv
+
+    # Content-hashed build output can be cached forever; the HTML entry
+    # point must always be revalidated so new deploys show up.
+    @static path /static/*
+    header @static Cache-Control "public, max-age=31536000, immutable"
+    @html path / /index.html
+    header @html Cache-Control "no-cache"
+
+    # SPA fallback for client-side routes.
+    try_files {path} /index.html
+    file_server
+}
+
+api.{$SITE_DOMAIN} {
+    encode gzip zstd
+    request_body {
+        max_size 110MB
+    }
     reverse_proxy api:8000
 }

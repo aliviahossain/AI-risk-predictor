@@ -162,56 +162,59 @@ npm --prefix frontend run build
 
 ---
 
-## Public Demo Deployment (Netlify + Render Free)
+## Production Deployment (Google Cloud, online-omics.com)
 
-For a no-monthly-payment public demo, deploy the frontend to Netlify and the
-API to a Render Free web service. Render Free services sleep when idle and
-have ephemeral storage; this is not reliable always-on production hosting.
+The whole stack runs on one Compute Engine VM with `docker compose`:
 
-### 1. Deploy the API to Render
+- `web` â€” Caddy serving the React build at `online-omics.com` (with `www`
+  redirected to it) and reverse-proxying `api.online-omics.com` to the API.
+  Caddy issues and renews HTTPS certificates automatically.
+- `api` â€” the FastAPI + R/Bioconductor image from `Dockerfile`. Uploads and
+  results live on a persistent Docker volume.
 
-Import this repository into Render and create a **Blueprint** from the
-`render.yaml` file. It configures the backend Docker image, health check,
-single-pipeline limit, upload limits, and cleanup policy. The image installs
-R and Bioconductor dependencies during its initial build, so the first deploy
-may take several minutes. Wait for the service health check to pass, then copy
-its public URL, for example `https://ai-risk-predictor-api.onrender.com`.
+A VM fits this better than Cloud Run: analyses run in background threads after the
+request returns, and job state is kept in memory and on local disk.
 
-### 2. Deploy the frontend to Netlify
+### First-time setup
 
-Import the same repository into Netlify. The checked-in `netlify.toml`
-configures the `frontend` base directory, `npm run build`, and `build` publish
-directory. Set this environment variable in the Netlify site settings:
+Requires the `gcloud` CLI, logged in, and a project with billing enabled.
 
-```text
-REACT_APP_API_URL=https://ai-risk-predictor-api.onrender.com
+```bash
+./deploy/gcp/deploy.sh provision   # enables Compute API, static IP, firewall, e2-medium VM
+./deploy/gcp/deploy.sh ip          # prints the static IP
 ```
 
-The same value is set in `netlify.toml`; replace it with the actual Render URL
-if Render assigned a different hostname. Save changes and trigger a new Netlify
-deploy. The API currently allows cross-origin requests from public websites.
+At the DNS provider (GoDaddy), replace the Netlify records with:
 
-### Important limitations before sharing
+| Type | Name  | Value           |
+|------|-------|-----------------|
+| A    | `@`   | *static IP*     |
+| A    | `api` | *static IP*     |
+| CNAME| `www` | `online-omics.com` |
 
-- Render Free spins down after inactivity. The first request after sleep may
-  take around a minute while the service wakes up.
-- Render Free has no persistent disk. Uploads, cached GEO downloads, and
-  results can disappear when the service restarts or sleeps.
+Then deploy (the first build compiles R packages and takes 20â€“40 minutes):
+
+```bash
+./deploy/gcp/deploy.sh deploy
+```
+
+Caddy obtains certificates once DNS resolves to the VM. Verify at
+`https://online-omics.com` and `https://api.online-omics.com/health`.
+
+### Updating
+
+Run `./deploy/gcp/deploy.sh deploy` again. It uploads the current working tree
+and rebuilds. Use `./deploy/gcp/deploy.sh logs` to tail logs. Override `PROJECT`,
+`REGION`, `ZONE`, `VM`, `MACHINE` or `SITE_DOMAIN` via environment variables.
+
+### Limitations
+
 - The service allows one analysis at a time, limits raw uploads to 100 MB,
   archive extraction to 512 MB, DEG CSV files to 25 MB, and analysis starts to
   five per client IP per hour. Completed results are cleaned up after 24 hours.
-- Job status is in memory. A service restart interrupts active jobs and loses
-  their status.
-- The API is public and does not require sign-in. These limits reduce casual
-  abuse but are not authentication or protection from distributed abuse.
-- The free instance has limited memory/CPU. Large GEO datasets may fail or run
-  slowly; inspect the Render service logs if an analysis fails.
-- Never upload sensitive or identifying data to this public demo.
-
-For an always-on service with persistent storage, deploy the same Docker image
-to a VM with adequate disk, RAM, backups, and monitoring. Oracle Always Free
-may be an option if account verification and free capacity are available; the
-free VM is still not an uptime guarantee.
+- Job status is in memory. A container restart interrupts active jobs.
+- The API is public and does not require sign-in. Never upload sensitive or
+  identifying data.
 
 ---
 

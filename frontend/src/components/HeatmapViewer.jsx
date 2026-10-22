@@ -18,6 +18,9 @@ export default function HeatmapViewer({ imageUrl }) {
           console.error("Static pipeline asset maps could not compile cleanly.");
         }}
       />
+      <a className="rp-heatmap-open" href={imageUrl} target="_blank" rel="noopener noreferrer">
+        Open full-size image
+      </a>
     </div>
   );
 }

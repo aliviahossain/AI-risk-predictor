@@ -7,7 +7,7 @@ services:
     environment:
       PORT: "8000"
       UPLOAD_DIR: /data/uploads
-      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS to your Netlify site origin}
+      CORS_ORIGINS: https://${SITE_DOMAIN:?Set SITE_DOMAIN},https://www.${SITE_DOMAIN}
       MAX_ACTIVE_PIPELINES: "1"
       MAX_UPLOAD_BYTES: "104857600"
       MAX_EXTRACTED_BYTES: "536870912"
@@ -19,17 +19,20 @@ services:
     expose:
       - "8000"
 
-  caddy:
-    image: caddy:2
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        REACT_APP_API_URL: https://api.${SITE_DOMAIN:?Set SITE_DOMAIN}
     restart: unless-stopped
     environment:
-      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN to a DNS name pointing at this VM}
+      SITE_DOMAIN: ${SITE_DOMAIN:?Set SITE_DOMAIN}
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
