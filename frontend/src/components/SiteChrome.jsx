@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import labLogo from "../assets/ibml-lab-logo.png";
+import omicsLogo from "../assets/online-omics-logo.png";
 import "./SiteChrome.css";
 
 export const ROUTES = {
@@ -19,12 +20,7 @@ const NAV_ITEMS = [
 export function Logo() {
   return (
     <a href={ROUTES.home} className="sc-logo" aria-label="DEG Analysis Viewer home">
-      <svg className="sc-logo-mark" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" fill="currentColor" />
-        <path d="M10 6c0 7 12 7 12 14s-12 6-12 6M22 6c0 7-12 7-12 14s12 6 12 6"
-          fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
-        <path d="M12 11h8M12 21h8" stroke="#fff" strokeOpacity=".6" strokeWidth="1.6" strokeLinecap="round" />
-      </svg>
+      <img className="sc-logo-mark" src={omicsLogo} alt="Online Omics" width="91" height="64" />
       <span className="sc-logo-text">
         DEG<span className="sc-logo-light"> Analysis Viewer</span>
       </span>

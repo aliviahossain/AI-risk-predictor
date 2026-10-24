@@ -1,0 +1,27 @@
+.pe-box {
+  background: #fef3f2; border: 1px solid #fecdca; border-left: 4px solid #d92d20;
+  padding: 16px 18px; font-family: var(--font); color: #7a271a; text-align: left;
+}
+.pe-head { display: flex; gap: 12px; align-items: flex-start; }
+.pe-head svg { width: 22px; height: 22px; flex-shrink: 0; color: #d92d20; margin-top: 1px; }
+.pe-title { margin: 0; font-size: 15px; font-weight: 700; color: #b42318; }
+.pe-step  { margin: 2px 0 0; font-size: 12px; color: #9a3412; }
+.pe-msg   { margin: 10px 0 0; font-size: 14px; line-height: 1.5; }
+.pe-hint  { margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.pe-hint strong { color: var(--ink); }
+.pe-toggle {
+  margin-top: 12px; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: #b42318; text-decoration: underline;
+}
+.pe-details {
+  margin: 8px 0 0; padding: 10px 12px; max-height: 180px; overflow: auto;
+  background: #fff; border: 1px solid #fecdca; font-family: var(--mono); font-size: 12px;
+  color: var(--ink-2); white-space: pre-wrap; word-break: break-word;
+}
+.pe-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.pe-retry {
+  padding: 8px 16px; border: 1px solid #b42318; background: #b42318; color: #fff;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.pe-retry:hover { background: #912018; }
+.pe-report { font-size: 13px; color: #b42318; font-weight: 500; }
