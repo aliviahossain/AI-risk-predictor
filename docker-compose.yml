@@ -12,7 +12,7 @@ services:
       MAX_UPLOAD_BYTES: "104857600"
       MAX_EXTRACTED_BYTES: "536870912"
       MAX_DEG_CSV_BYTES: "26214400"
-      MAX_JOBS_PER_IP_PER_HOUR: "5"
+      MAX_JOBS_PER_IP_PER_HOUR: "10"
       JOB_RETENTION_HOURS: "24"
     volumes:
       - uploads:/data/uploads
