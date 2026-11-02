@@ -45,6 +45,9 @@ yarn-error.log*
 pnpm-debug.log*
 package-lock.json
 
+# Netlify CLI state
+.netlify/
+
 # Visual Studio Code
 .vscode/
 .history/
