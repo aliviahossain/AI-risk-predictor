@@ -162,59 +162,32 @@ npm --prefix frontend run build
 
 ---
 
-## Production Deployment (Google Cloud, online-omics.com)
+## Production Deployment (Render Free)
 
-The whole stack runs on one Compute Engine VM with `docker compose`:
-
-- `web` â€” Caddy serving the React build at `online-omics.com` (with `www`
-  redirected to it) and reverse-proxying `api.online-omics.com` to the API.
-  Caddy issues and renews HTTPS certificates automatically.
-- `api` â€” the FastAPI + R/Bioconductor image from `Dockerfile`. Uploads and
-  results live on a persistent Docker volume.
-
-A VM fits this better than Cloud Run: analyses run in background threads after the
-request returns, and job state is kept in memory and on local disk.
+The complete app runs as one Render Docker web service. Caddy serves React and routes `/deg`, `/geo`, and `/health` to FastAPI. The Render Free plan uses ephemeral storage, so uploaded files and analysis results can be lost on spin-down, restart, or redeploy.
 
 ### First-time setup
 
-Requires the `gcloud` CLI, logged in, and a project with billing enabled.
+1. Push this repository to GitHub and connect it to Render.
+2. Create a Render Blueprint from the repository. Render reads `render.yaml` and builds the service. The first build installs R and Bioconductor packages and may take 20-40 minutes.
+3. After Render assigns the service URL, add a GitHub repository variable named `RENDER_SERVICE_URL` with the full URL, such as `https://online-omics.onrender.com`.
+4. In the repository's Actions tab, run **Keep Render free service warm** once, or wait for its scheduled run. It requests `/health` every 10 minutes.
+5. Verify the app and `https://your-render-url/health` after deployment.
 
-```bash
-./deploy/gcp/deploy.sh provision   # enables Compute API, static IP, firewall, e2-medium VM
-./deploy/gcp/deploy.sh ip          # prints the static IP
-```
+### Free plan keep-alive
 
-At the DNS provider (GoDaddy), replace the Netlify records with:
+GitHub Actions sends an inbound health request every 10 minutes to reduce idle spin-downs. GitHub may delay or skip scheduled runs, and Render may restart Free services at any time, so the workflow cannot guarantee the service never sleeps. It uses GitHub Actions minutes.
 
-| Type | Name  | Value           |
-|------|-------|-----------------|
-| A    | `@`   | *static IP*     |
-| A    | `api` | *static IP*     |
-| CNAME| `www` | `online-omics.com` |
-
-Then deploy (the first build compiles R packages and takes 20â€“40 minutes):
-
-```bash
-./deploy/gcp/deploy.sh deploy
-```
-
-Caddy obtains certificates once DNS resolves to the VM. Verify at
-`https://online-omics.com` and `https://api.online-omics.com/health`.
+Render Free services spin down after 15 minutes without inbound traffic and do not support persistent disks. Job state is in memory, and active analyses stop if the process restarts. For reliable persistence and always-on service, use a paid Render plan.
 
 ### Updating
 
-Run `./deploy/gcp/deploy.sh deploy` again. It uploads the current working tree
-and rebuilds. Use `./deploy/gcp/deploy.sh logs` to tail logs. Override `PROJECT`,
-`REGION`, `ZONE`, `VM`, `MACHINE` or `SITE_DOMAIN` via environment variables.
+Push changes to the connected branch; Render rebuilds and deploys the service.
 
 ### Limitations
 
-- The service allows one analysis at a time, limits raw uploads to 100 MB,
-  archive extraction to 512 MB, DEG CSV files to 25 MB, and analysis starts to
-  five per client IP per hour. Completed results are cleaned up after 24 hours.
-- Job status is in memory. A container restart interrupts active jobs.
-- The API is public and does not require sign-in. Never upload sensitive or
-  identifying data.
+- The service allows one analysis at a time, limits raw uploads to 100 MB, archive extraction to 512 MB, DEG CSV files to 25 MB, and analysis starts to ten per client IP per hour. Completed results are cleaned up after 24 hours.
+- The API is public and does not require sign-in. Never upload sensitive or identifying data.
 
 ---
 

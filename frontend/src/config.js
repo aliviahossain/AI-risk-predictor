@@ -9,6 +9,10 @@ const getApiUrl = () => {
 
   // In browser: use same hostname but port 8000
   // This works whether you're on localhost OR another device on the network
+  if (process.env.NODE_ENV === 'production') {
+    return window.location.origin;
+  }
+
   const host = window.location.hostname;
   return `http://${host}:8000`;
 };
