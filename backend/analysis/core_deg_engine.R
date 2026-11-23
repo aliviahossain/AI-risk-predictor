@@ -56,20 +56,70 @@ if (using_raw) {
   options(download.file.method.GEOquery="libcurl", download.file.method="libcurl")
   cat("  GEO download method: libcurl\n")
   cat("\nSTEP 1: Downloading GEO metadata...\n")
-  gse_list <- tryCatch(
-    # Platform annotation is optional for the analysis and can make this GEO
-    # metadata request fail even when the series itself is public. Fetch the
-    # series matrix first; supplementary files provide the expression data.
-    withCallingHandlers(
-      getGEO(geo_id, destdir=output_dir, getGPL=FALSE, AnnotGPL=FALSE),
-      warning=function(w) {
-        cat("WARN metadata:", conditionMessage(w), "\n")
-        invokeRestart("muffleWarning")
-      }
-    ),
-    error=function(e){ cat("ERROR metadata:", conditionMessage(e), "\n"); quit(status=1) }
+  # Download the standard Series Matrix through system curl first. This avoids
+  # GEOquery's R connection path, which can fail on some hosted Linux runtimes.
+  series_number <- as.integer(sub("^GSE", "", geo_id))
+  series_bucket <- if (series_number < 1000) "GSEnnn" else
+                   paste0("GSE", series_number %/% 1000, "nnn")
+  matrix_url <- paste0(
+    "https://ftp.ncbi.nlm.nih.gov/geo/series/", series_bucket, "/", geo_id,
+    "/matrix/", geo_id, "_series_matrix.txt.gz"
   )
-  gse      <- gse_list[[1]]
+  matrix_file <- file.path(output_dir, paste0(geo_id, "_series_matrix.txt.gz"))
+  if (file.exists(matrix_file)) unlink(matrix_file)
+  curl_output <- tryCatch(
+    suppressWarnings(system2(
+      "curl",
+      args=c("--fail", "--location", "--silent", "--show-error",
+             "--connect-timeout", "15", "--max-time", "300", "--retry", "1",
+             "--output", shQuote(matrix_file), matrix_url),
+      stdout=TRUE, stderr=TRUE
+    )),
+    error=function(e) structure(conditionMessage(e), status=127L)
+  )
+  curl_status <- attr(curl_output, "status")
+  if (is.null(curl_status)) curl_status <- 0L
+
+  gse_result <- NULL
+  if (curl_status == 0L && file.exists(matrix_file) && file.info(matrix_file)$size > 0) {
+    cat("  Downloaded Series Matrix with system curl\n")
+    get_geo_args <- list(filename=matrix_file, getGPL=FALSE, AnnotGPL=FALSE)
+    if ("returnType" %in% names(formals(getGEO)))
+      get_geo_args$returnType <- "ExpressionSet"
+    gse_result <- tryCatch(
+      withCallingHandlers(
+        do.call(getGEO, get_geo_args),
+        warning=function(w) {
+          cat("WARN metadata:", conditionMessage(w), "\n")
+          invokeRestart("muffleWarning")
+        }
+      ),
+      error=function(e) {
+        cat("WARN metadata: could not parse downloaded Series Matrix:", conditionMessage(e), "\n")
+        NULL
+      }
+    )
+  } else {
+    cat("WARN metadata: direct curl download failed (exit ", curl_status, "): ",
+        paste(curl_output, collapse=" "), "\n", sep="")
+  }
+
+  # Some GEO series have no Series Matrix. Let GEOquery try its SOFT fallback.
+  if (is.null(gse_result)) {
+    gse_result <- tryCatch(
+      withCallingHandlers(
+        getGEO(geo_id, destdir=output_dir, getGPL=FALSE, AnnotGPL=FALSE),
+        warning=function(w) {
+          cat("WARN metadata:", conditionMessage(w), "\n")
+          invokeRestart("muffleWarning")
+        }
+      ),
+      error=function(e){ cat("ERROR metadata:", conditionMessage(e), "\n"); quit(status=1) }
+    )
+  }
+
+  gse <- if (is.list(gse_result) && !inherits(gse_result, "ExpressionSet") &&
+             !inherits(gse_result, "SummarizedExperiment")) gse_result[[1]] else gse_result
   metadata <- pData(gse)
   cat("  Samples :", nrow(metadata), "\n")
   cat("  Platform:", as.character(annotation(gse)), "\n")
