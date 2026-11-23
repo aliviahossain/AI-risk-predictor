@@ -19,7 +19,7 @@ const PIPELINE = [
 
 const TEAM = [
   {
-    name: "Dr. Khalid Mirza Baig",
+    name: "Dr. Mirza Khalid Baig",
     role: "Assistant Professor",
     dept: "Department of Biotechnology and Medical Engineering",
     org:  "National Institute of Technology Rourkela",

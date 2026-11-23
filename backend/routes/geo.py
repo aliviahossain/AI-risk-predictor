@@ -226,6 +226,107 @@ class GEORequest(BaseModel):
     geo_id: str
 
 
+# Ordered (pattern, title, message, hint) rules mapping raw R / process output
+# to a plain-language explanation. The first rule whose pattern matches any
+# error or log line wins. "{source}" is replaced per mode (GEO vs upload).
+_FAILURE_RULES = [
+    (r"finished without writing a results table",
+     "No results were produced",
+     "The pipeline finished, but did not write a results table.",
+     "Check the technical details below. If the problem persists, report it via the feedback form."),
+    (r"ERROR metadata|cannot open URL|HTTP error 404|does not exist",
+     "Could not retrieve this dataset from GEO",
+     "NCBI GEO did not return metadata for this accession.",
+     "Check that the GSE ID is correct and public, then try again. "
+     "If it is correct, NCBI may be temporarily unavailable — retry in a few minutes."),
+    (r"Could not resolve host|Timeout was reached|timed out|Connection (refused|reset)",
+     "Could not reach NCBI GEO",
+     "The server lost its connection while downloading data from NCBI.",
+     "This is usually temporary. Please try again in a few minutes."),
+    (r"Could not load expression data",
+     "No usable expression matrix found",
+     "{source} did not contain a gene-by-sample table of numeric values the pipeline could read.",
+     "{source_hint}"),
+    (r"valid samples\. Need >= 4",
+     "Not enough samples",
+     "After removing empty or constant columns, fewer than 4 samples were left. "
+     "Differential expression needs at least 2 samples in each group.",
+     "Make sure each column is one sample with numeric values, and that the file includes "
+     "both case and control samples."),
+    (r"ERROR (lmFit|eBayes|topTable)|No residual degrees of freedom",
+     "The statistical model could not be fitted",
+     "limma could not fit the case-vs-control model to this data.",
+     "This usually means the case/control groups could not be detected, or one group has "
+     "too few samples. Name sample columns so they include words like 'control' / 'normal' "
+     "and 'case' / 'tumor' / 't2d'."),
+    (r"there is no package called|Installing .* failed|package .* is not available",
+     "Server is missing a required R package",
+     "The analysis server is not fully set up.",
+     "This is a problem on our side, not with your data. Please report it via the feedback form."),
+    (r"cannot allocate vector|memory exhausted|Killed",
+     "The dataset is too large to process",
+     "The server ran out of memory while analysing this dataset.",
+     "Try a smaller file (fewer genes or samples), or filter low-count genes before uploading."),
+    (r"Rscript not found|R script not found",
+     "Analysis engine unavailable",
+     "The R analysis engine could not be started on the server.",
+     "This is a problem on our side, not with your data. Please report it via the feedback form."),
+]
+
+
+def _classify_failure(lines: list[str], failed_step: str, upload_mode: bool) -> dict:
+    """Turn raw pipeline output into a user-facing failure description."""
+    source = "The uploaded file" if upload_mode else "This GEO series"
+    source_hint = (
+        "Upload a matrix with gene/probe IDs in the first column and one numeric column "
+        "per sample (.csv, .tsv or .txt, optionally gzipped)."
+        if upload_mode else
+        "Some GEO series only provide raw sequencing reads or unusual file formats. "
+        "Download a counts or expression matrix yourself and use the "
+        "'Raw expression file' option instead."
+    )
+    text = "\n".join(lines)
+    for pattern, title, message, hint in _FAILURE_RULES:
+        if re.search(pattern, text, re.IGNORECASE):
+            break
+    else:
+        title = "The analysis stopped unexpectedly"
+        message = f"The pipeline failed during the “{failed_step}” step." if failed_step else \
+                  "The pipeline failed before it could start."
+        hint = "Check the technical details below. If the problem persists, report it via the feedback form."
+    fmt = {"source": source, "source_hint": source_hint}
+    errors = [l for l in lines if _is_error_line(l)]
+    return {
+        "title": title,
+        "message": message.format(**fmt),
+        "hint": hint.format(**fmt),
+        "step": failed_step,
+        "details": errors[-5:] or lines[-5:],
+    }
+
+
+def _is_error_line(line: str) -> bool:
+    # FIX 9: Only treat lines starting with "ERROR" as errors, not lines that
+    #         merely contain the word. Also capture R's own "Error:" and
+    #         "Error in f(...) :" prefixes from uncaught stop() calls.
+    return line.startswith(("ERROR", "Error:", "Error in "))
+
+
+def _fail_job(job_id: str, upload_mode: bool, extra: str | None = None) -> None:
+    """Mark a job as failed and attach a classified, user-facing explanation."""
+    with _jobs_lock:
+        job = jobs[job_id]
+        if extra:
+            job["errors"].append(extra)
+        failed_step = job.get("step", "")
+        job["failure"] = _classify_failure(
+            job["errors"] + job["log"][-40:], failed_step, upload_mode
+        )
+        job["status"] = "error"
+        job["step"] = "Pipeline failed"
+        job["finished_at"] = time.time()
+
+
 def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | None = None):
     """Runs the R script in a background thread and tracks progress.
 
@@ -296,19 +397,16 @@ def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | 
                         break
                 if matched_step:
                     jobs[job_id]["step"] = matched_step
-                # FIX 9: Only treat lines starting with "ERROR" as errors, not lines
-                #         that merely contain the word (e.g. "STEP X: ...error handling...").
-                #         Also capture R "Error:" prefix (capital-E, colon).
-                elif line.startswith("ERROR") or line.startswith("Error:"):
+                elif _is_error_line(line):
                     jobs[job_id]["errors"].append(line)
 
         process.wait()
 
         if process.returncode != 0:
-            with _jobs_lock:
-                jobs[job_id]["status"] = "error"
-                jobs[job_id]["step"]   = "Pipeline failed"
-                jobs[job_id]["finished_at"] = time.time()
+            # A negative code means the process was killed by a signal; on
+            # Linux that is almost always the OOM killer (SIGKILL).
+            killed = process.returncode < 0 or process.returncode == 137
+            _fail_job(job_id, upload_mode, "Killed (out of memory)" if killed else None)
             return
 
         # Read summary JSON produced by R
@@ -320,10 +418,12 @@ def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | 
                 jobs[job_id]["summary"] = summary_data
 
         full_csv = os.path.join(job_dir, f"{geo_id}_DEGs_Full.csv")
-        if os.path.exists(full_csv):
-            with _jobs_lock:
-                jobs[job_id]["csv_path"]     = full_csv
-                jobs[job_id]["csv_filename"] = f"{geo_id}_DEGs_Full.csv"
+        if not os.path.exists(full_csv):
+            _fail_job(job_id, upload_mode, "ERROR: Pipeline finished without writing a results table")
+            return
+        with _jobs_lock:
+            jobs[job_id]["csv_path"]     = full_csv
+            jobs[job_id]["csv_filename"] = f"{geo_id}_DEGs_Full.csv"
 
         heatmap = os.path.join(job_dir, f"{geo_id}_Top28_Heatmap.png")
         if os.path.exists(heatmap):
@@ -340,20 +440,12 @@ def run_r_pipeline(job_id: str, geo_id: str, job_dir: str, raw_file_path: str | 
     except FileNotFoundError as e:
         err_msg = str(e)
         if "Rscript" in err_msg or "rscript" in err_msg.lower():
-            step_msg = "Rscript not found — is R installed? https://cran.r-project.org"
+            step_msg = "ERROR: Rscript not found — is R installed? https://cran.r-project.org"
         else:
-            step_msg = f"R script not found at path: {R_SCRIPT}"
-        with _jobs_lock:
-            jobs[job_id]["status"] = "error"
-            jobs[job_id]["step"]   = step_msg
-            jobs[job_id]["errors"].append(step_msg)
-            jobs[job_id]["finished_at"] = time.time()
+            step_msg = f"ERROR: R script not found at path: {R_SCRIPT}"
+        _fail_job(job_id, upload_mode, step_msg)
     except Exception as e:
-        with _jobs_lock:
-            jobs[job_id]["status"] = "error"
-            jobs[job_id]["step"]   = str(e)
-            jobs[job_id]["errors"].append(str(e))
-            jobs[job_id]["finished_at"] = time.time()
+        _fail_job(job_id, upload_mode, f"ERROR: {e}")
 
 
 @router.post("/run")
@@ -504,6 +596,7 @@ def get_status(job_id: str):
         "status":       job["status"],
         "step":         job["step"],
         "errors":       job["errors"],
+        "failure":      job.get("failure"),
         "summary":      job.get("summary"),
         "log":          job["log"][-20:],
         "csv_filename": job.get("csv_filename"),

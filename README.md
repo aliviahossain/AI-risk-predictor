@@ -162,56 +162,32 @@ npm --prefix frontend run build
 
 ---
 
-## Public Demo Deployment (Netlify + Render Free)
+## Production Deployment (Render Free)
 
-For a no-monthly-payment public demo, deploy the frontend to Netlify and the
-API to a Render Free web service. Render Free services sleep when idle and
-have ephemeral storage; this is not reliable always-on production hosting.
+The complete app runs as one Render Docker web service. Caddy serves React and routes `/deg`, `/geo`, and `/health` to FastAPI. The Render Free plan uses ephemeral storage, so uploaded files and analysis results can be lost on spin-down, restart, or redeploy.
 
-### 1. Deploy the API to Render
+### First-time setup
 
-Import this repository into Render and create a **Blueprint** from the
-`render.yaml` file. It configures the backend Docker image, health check,
-single-pipeline limit, upload limits, and cleanup policy. The image installs
-R and Bioconductor dependencies during its initial build, so the first deploy
-may take several minutes. Wait for the service health check to pass, then copy
-its public URL, for example `https://ai-risk-predictor-api.onrender.com`.
+1. Push this repository to GitHub and connect it to Render.
+2. Create a Render Blueprint from the repository. Render reads `render.yaml` and builds the service. The first build installs R and Bioconductor packages and may take 20-40 minutes.
+3. After Render assigns the service URL, add a GitHub repository variable named `RENDER_SERVICE_URL` with the full URL, such as `https://online-omics.onrender.com`.
+4. In the repository's Actions tab, run **Keep Render free service warm** once, or wait for its scheduled run. It requests `/health` every 10 minutes.
+5. Verify the app and `https://your-render-url/health` after deployment.
 
-### 2. Deploy the frontend to Netlify
+### Free plan keep-alive
 
-Import the same repository into Netlify. The checked-in `netlify.toml`
-configures the `frontend` base directory, `npm run build`, and `build` publish
-directory. Set this environment variable in the Netlify site settings:
+GitHub Actions sends an inbound health request every 10 minutes to reduce idle spin-downs. GitHub may delay or skip scheduled runs, and Render may restart Free services at any time, so the workflow cannot guarantee the service never sleeps. It uses GitHub Actions minutes.
 
-```text
-REACT_APP_API_URL=https://ai-risk-predictor-api.onrender.com
-```
+Render Free services spin down after 15 minutes without inbound traffic and do not support persistent disks. Job state is in memory, and active analyses stop if the process restarts. For reliable persistence and always-on service, use a paid Render plan.
 
-The same value is set in `netlify.toml`; replace it with the actual Render URL
-if Render assigned a different hostname. Save changes and trigger a new Netlify
-deploy. The API currently allows cross-origin requests from public websites.
+### Updating
 
-### Important limitations before sharing
+Push changes to the connected branch; Render rebuilds and deploys the service.
 
-- Render Free spins down after inactivity. The first request after sleep may
-  take around a minute while the service wakes up.
-- Render Free has no persistent disk. Uploads, cached GEO downloads, and
-  results can disappear when the service restarts or sleeps.
-- The service allows one analysis at a time, limits raw uploads to 100 MB,
-  archive extraction to 512 MB, DEG CSV files to 25 MB, and analysis starts to
-  five per client IP per hour. Completed results are cleaned up after 24 hours.
-- Job status is in memory. A service restart interrupts active jobs and loses
-  their status.
-- The API is public and does not require sign-in. These limits reduce casual
-  abuse but are not authentication or protection from distributed abuse.
-- The free instance has limited memory/CPU. Large GEO datasets may fail or run
-  slowly; inspect the Render service logs if an analysis fails.
-- Never upload sensitive or identifying data to this public demo.
+### Limitations
 
-For an always-on service with persistent storage, deploy the same Docker image
-to a VM with adequate disk, RAM, backups, and monitoring. Oracle Always Free
-may be an option if account verification and free capacity are available; the
-free VM is still not an uptime guarantee.
+- The service allows one analysis at a time, limits raw uploads to 100 MB, archive extraction to 512 MB, DEG CSV files to 25 MB, and analysis starts to ten per client IP per hour. Completed results are cleaned up after 24 hours.
+- The API is public and does not require sign-in. Never upload sensitive or identifying data.
 
 ---
 

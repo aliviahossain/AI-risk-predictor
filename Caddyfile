@@ -1,4 +1,21 @@
-{$API_DOMAIN} {
-    encode gzip zstd
-    reverse_proxy api:8000
+http://:{$PORT} {
+	encode gzip zstd
+	request_body {
+		max_size 110MB
+	}
+
+	@api path /deg* /geo* /health
+	handle @api {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		root * /srv
+		@static path /static/*
+		header @static Cache-Control "public, max-age=31536000, immutable"
+		@html path / /index.html
+		header @html Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
 }

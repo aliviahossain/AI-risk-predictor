@@ -4,6 +4,7 @@ import RawUploadForm from "../components/RawUploadForm";
 import { API } from "../config";
 import { ROUTES } from "../components/SiteChrome";
 import HeroBackdrop from "../components/HeroBackdrop";
+import PipelineError, { PipelineFailure, requestFailure, toFailure } from "../components/PipelineError";
 import "./UploadPage.css";
 
 const GEO_SUGGESTIONS = [
@@ -45,6 +46,8 @@ const HOW_STEPS = [
   ["Explore the results", "Filter, sort and visualize significant genes, then export what you need."],
 ];
 
+const FEEDBACK_URL = "https://docs.google.com/forms/d/e/1FAIpQLSe4pzWJtWDbCdj1LBhJhGCEuGB2PYFqz-PwCBchPnP-17tVTg/viewform";
+
 const Icon = ({ children }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
@@ -56,6 +59,7 @@ export default function UploadPage({ onDataLoaded }) {
   const [file,      setFile]      = useState(null);
   const [geoId,     setGeoId]     = useState("");
   const [error,     setError]     = useState("");
+  const [failure,   setFailure]   = useState(null);
   const [loading,   setLoading]   = useState(false);
   const [jobId,     setJobId]     = useState(null);
   const [jobStep,   setJobStep]   = useState("");
@@ -81,12 +85,12 @@ export default function UploadPage({ onDataLoaded }) {
   const runGeoPipeline = async (id) => {
     const gid = (id || geoId).trim().toUpperCase();
     if (!gid.startsWith("GSE")) { setError("GEO ID must start with GSE"); return; }
-    setGeoId(gid); setError(""); setLoading(true);
+    setGeoId(gid); setError(""); setFailure(null); setLoading(true);
     setJobStep("Starting…"); setJobLog([]); setJobStatus("running"); setJobId(null);
     try {
       const res  = await fetch(`${API}/geo/run`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({geo_id:gid}) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to start pipeline");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw requestFailure(res, data, "Starting the analysis");
       setJobId(data.job_id);
       if (data.cached) {
         // Server already has results for this accession: skip polling entirely.
@@ -95,14 +99,18 @@ export default function UploadPage({ onDataLoaded }) {
       } else {
         pollJob(data.job_id, gid);
       }
-    } catch (e) { setError(e.message); setLoading(false); setJobStatus(""); }
+    } catch (e) { setFailure(toFailure(e)); setLoading(false); setJobStatus(""); }
   };
 
   const loadGeoResults = async (jid, gid) => {
     const csvRes = await fetch(`${API}/geo/download/${jid}`);
-    if (!csvRes.ok) throw new Error("Could not download pipeline results (HTTP " + csvRes.status + ")");
+    if (!csvRes.ok) throw requestFailure(csvRes, await csvRes.json().catch(() => ({})), "Downloading the results");
     const genes = parseCSV(await csvRes.text());
-    if (genes.length === 0) throw new Error("Pipeline produced no valid genes — check the log above.");
+    if (genes.length === 0) throw new PipelineFailure({
+      title: "The results table is empty",
+      message: "The pipeline finished, but its output contained no valid genes.",
+      hint: "This usually means the input had no genes that passed filtering. Check the log above.",
+    });
     onDataLoaded(genes, `${gid}_DEGs_Full.csv`, jid);
   };
 
@@ -110,15 +118,18 @@ export default function UploadPage({ onDataLoaded }) {
     const iv = setInterval(async () => {
       try {
         const res = await fetch(`${API}/geo/status/${jid}`);
-        if (!res.ok) throw new Error("Status poll failed — server returned " + res.status);
+        if (!res.ok) throw requestFailure(res, await res.json().catch(() => ({})), "Checking progress");
         const data = await res.json();
         setJobStep(data.step); setJobLog(data.log||[]); setJobStatus(data.status);
         if (data.status === "done") {
           clearInterval(iv); setLoading(false);
           await loadGeoResults(jid, gid);
         }
-        if (data.status === "error") { clearInterval(iv); setLoading(false); setError("Pipeline error: "+(data.errors?.[0]||"Unknown")); }
-      } catch (e) { clearInterval(iv); setLoading(false); setError(e.message || "Network error while polling pipeline."); }
+        if (data.status === "error") {
+          clearInterval(iv); setLoading(false);
+          setFailure(data.failure || { title: "The analysis failed", message: data.errors?.[0] || "Unknown error", details: data.errors });
+        }
+      } catch (e) { clearInterval(iv); setLoading(false); setJobStatus("error"); setFailure(toFailure(e)); }
     }, 2500);
   };
 
@@ -155,7 +166,7 @@ export default function UploadPage({ onDataLoaded }) {
             {MODES.map(m => (
               <button key={m.id} role="tab" aria-selected={mode===m.id}
                 className={`up-mode ${mode===m.id?"active":""}`}
-                onClick={()=>{setMode(m.id);setError("");}}>
+                onClick={()=>{setMode(m.id);setError("");setFailure(null);}}>
                 <span className="up-mode-icon"><Icon>{m.icon}</Icon></span>
                 <span className="up-mode-text">
                   <span className="up-mode-label">{m.label}</span>
@@ -287,6 +298,7 @@ export default function UploadPage({ onDataLoaded }) {
             )}
 
             {error && <div className="up-err" role="alert">{error}</div>}
+            {failure && <PipelineError failure={failure} onRetry={mode==="geo" && geoId ? () => runGeoPipeline(geoId) : null} />}
           </div>
         </div>
       </section>
@@ -319,6 +331,23 @@ export default function UploadPage({ onDataLoaded }) {
               </li>
             ))}
           </ol>
+        </div>
+      </section>
+
+      {/* ── Feedback ── */}
+      <section className="up-section up-feedback">
+        <div className="up-container up-feedback-inner">
+          <div>
+            <h2 className="up-h2 up-feedback-title">We'd love your feedback</h2>
+            <p className="up-feedback-text">
+              Tried the pipeline? Please take a minute to tell us what you liked, what you didn't,
+              and what you'd like to see next. Your feedback is highly appreciated and
+              helps us improve the tool for everyone.
+            </p>
+          </div>
+          <a href={FEEDBACK_URL} target="_blank" rel="noopener noreferrer" className="sc-btn sc-btn-primary up-feedback-btn">
+            Share feedback
+          </a>
         </div>
       </section>
 

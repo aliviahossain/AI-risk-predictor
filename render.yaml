@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: ai-risk-predictor-api
+    name: online-omics
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
@@ -9,8 +9,6 @@ services:
     envVars:
       - key: UPLOAD_DIR
         value: /data/uploads
-      - key: CORS_ORIGINS
-        value: "*"
       - key: MAX_ACTIVE_PIPELINES
         value: "1"
       - key: MAX_UPLOAD_BYTES
@@ -20,6 +18,6 @@ services:
       - key: MAX_DEG_CSV_BYTES
         value: "26214400"
       - key: MAX_JOBS_PER_IP_PER_HOUR
-        value: "5"
+        value: "10"
       - key: JOB_RETENTION_HOURS
         value: "24"

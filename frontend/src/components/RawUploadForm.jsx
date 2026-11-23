@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { parseCSV } from "../utils/parseCSV";
 import { API } from "../config";
+import PipelineError, { PipelineFailure, requestFailure, toFailure } from "./PipelineError";
 import "./RawUploadForm.css";
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -27,6 +28,7 @@ export default function RawUploadForm({ onAnalysisComplete }) {
   const [step,      setStep]      = useState("");
   const [log,       setLog]       = useState([]);
   const [error,     setError]     = useState("");
+  const [failure,   setFailure]   = useState(null);
   const [loading,   setLoading]   = useState(false);
   const [jobStatus, setJobStatus] = useState("");
 
@@ -35,18 +37,22 @@ export default function RawUploadForm({ onAnalysisComplete }) {
     const allowed = [".csv", ".tsv", ".txt", ".gz"];
     const ok = allowed.some((ext) => f.name.toLowerCase().endsWith(ext));
     if (!ok) { setError(`Unsupported file. Allowed: ${allowed.join(", ")}`); return; }
-    setFile(f); setError("");
+    setFile(f); setError(""); setFailure(null);
   };
 
   const pollStatus = async (jobId) => {
     let attempts = 0;
     while (true) {
-      if (attempts > 300) throw new Error("Pipeline timeout — please try again.");
+      if (attempts > 300) throw new PipelineFailure({
+        title: "The analysis is taking too long",
+        message: "No result after 12 minutes, so the page stopped waiting.",
+        hint: "Large files can take a while. Try again, or upload a smaller or filtered matrix.",
+      });
       attempts++;
       await wait(2500);
 
       const res = await fetch(`${API}/geo/status/${jobId}`);
-      if (!res.ok) throw new Error("Failed to poll status");
+      if (!res.ok) throw requestFailure(res, await res.json().catch(() => ({})), "Checking progress");
 
       const data = await res.json();
       setStep(data.step || "");
@@ -55,7 +61,9 @@ export default function RawUploadForm({ onAnalysisComplete }) {
 
       if (data.status === "done")   return data;
       if (data.status === "error") {
-        throw new Error(data.errors?.[0] || data.step || "Pipeline failed");
+        throw new PipelineFailure(data.failure || {
+          title: "The analysis failed", message: data.errors?.[0] || "Unknown error", details: data.errors,
+        });
       }
     }
   };
@@ -64,7 +72,7 @@ export default function RawUploadForm({ onAnalysisComplete }) {
     e.preventDefault();
     if (!file) { setError("Please choose a file."); return; }
 
-    setLoading(true); setError(""); setStatus("Uploading…");
+    setLoading(true); setError(""); setFailure(null); setStatus("Uploading…");
     setLog([]); setStep(""); setJobStatus("running");
 
     try {
@@ -73,24 +81,28 @@ export default function RawUploadForm({ onAnalysisComplete }) {
       form.append("label", label.trim() || "UPLOAD");
 
       const res  = await fetch(`${API}/geo/upload-raw`, { method:"POST", body:form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Upload failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw requestFailure(res, data, "Upload");
 
       setStatus("Pipeline running…");
       await pollStatus(data.job_id);
 
       setStatus("Downloading results…");
       const csvRes = await fetch(`${API}/geo/download/${data.job_id}`);
-      if (!csvRes.ok) throw new Error("Could not download results");
+      if (!csvRes.ok) throw requestFailure(csvRes, await csvRes.json().catch(() => ({})), "Downloading the results");
 
       const genes = parseCSV(await csvRes.text());
-      if (genes.length === 0) throw new Error("No valid genes in output — check file format.");
+      if (genes.length === 0) throw new PipelineFailure({
+        title: "The results table is empty",
+        message: "The pipeline finished, but its output contained no valid genes.",
+        hint: "Check that the file has gene IDs in the first column and numeric values per sample.",
+      });
 
       setStatus("Done!");
       onAnalysisComplete(genes, `${data.geo_id || "upload"}_DEGs.csv`, data.job_id);
 
     } catch (err) {
-      setError(err.message || "Unknown error");
+      setFailure(toFailure(err));
       setStatus(""); setJobStatus("error");
     } finally {
       setLoading(false);
@@ -180,12 +192,13 @@ export default function RawUploadForm({ onAnalysisComplete }) {
         </div>
       )}
 
-      {status && !error && (
+      {status && !error && !failure && (
         <div className="raw-status">{status}</div>
       )}
       {error && (
         <div className="raw-error">{error}</div>
       )}
+      <PipelineError failure={failure} onRetry={file ? handleSubmit : null} />
 
       <div className="raw-hint-box">
         <p className="raw-hint-title">Supported file formats</p>

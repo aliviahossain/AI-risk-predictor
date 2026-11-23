@@ -267,3 +267,48 @@ def test_newsletter_subscribe_validates_and_dedupes(tmp_path, monkeypatch):
 
     rows = (tmp_path / "data" / "subscribers.csv").read_text(encoding="utf-8").splitlines()
     assert len(rows) == 2
+
+
+def test_classify_failure_explains_too_few_samples():
+    failure = geo._classify_failure(
+        ["ERROR: Only 3 valid samples. Need >= 4."], "Cleaning matrix", upload_mode=True
+    )
+
+    assert failure["title"] == "Not enough samples"
+    assert failure["step"] == "Cleaning matrix"
+    assert failure["details"] == ["ERROR: Only 3 valid samples. Need >= 4."]
+
+
+def test_classify_failure_tailors_missing_matrix_hint_to_mode():
+    lines = ["ERROR: Could not load expression data"]
+    geo_failure = geo._classify_failure(lines, "Reading count matrix", upload_mode=False)
+    raw_failure = geo._classify_failure(lines, "Reading count matrix", upload_mode=True)
+
+    assert geo_failure["title"] == "No usable expression matrix found"
+    assert "Raw expression file" in geo_failure["hint"]
+    assert raw_failure["message"].startswith("The uploaded file")
+
+
+def test_classify_failure_falls_back_to_generic_message_with_uncaught_r_error():
+    failure = geo._classify_failure(
+        ["  [OK] limma", "Error in foo(x) : subscript out of bounds", "Execution halted"],
+        "Assigning groups", upload_mode=False,
+    )
+
+    assert failure["title"] == "The analysis stopped unexpectedly"
+    assert "Assigning groups" in failure["message"]
+    assert failure["details"] == ["Error in foo(x) : subscript out of bounds"]
+
+
+def test_geo_status_reports_classified_failure(client):
+    geo.jobs["job1"] = {
+        "geo_id": "GSE1", "status": "running", "step": "Running DGE (voom + limma)",
+        "log": ["ERROR lmFit: no residual degrees of freedom"], "errors": [],
+        "summary": None, "created_at": 0,
+    }
+    geo._fail_job("job1", upload_mode=False)
+
+    body = client.get("/geo/status/job1").json()
+    assert body["status"] == "error"
+    assert body["failure"]["title"] == "The statistical model could not be fitted"
+    assert body["failure"]["step"] == "Running DGE (voom + limma)"
