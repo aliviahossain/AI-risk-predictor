@@ -230,6 +230,10 @@ class GEORequest(BaseModel):
 # to a plain-language explanation. The first rule whose pattern matches any
 # error or log line wins. "{source}" is replaced per mode (GEO vs upload).
 _FAILURE_RULES = [
+    (r"Could not resolve host|Could not resolve proxy|Timeout was reached|timed out|cannot open the connection|Connection (refused|reset)|Failed to connect|SSL (connect|certificate)|certificate verify failed",
+     "Could not reach NCBI GEO",
+     "The server lost its connection while downloading data from NCBI.",
+     "This is usually temporary. Please try again in a few minutes."),
     (r"finished without writing a results table",
      "No results were produced",
      "The pipeline finished, but did not write a results table.",
@@ -295,13 +299,15 @@ def _classify_failure(lines: list[str], failed_step: str, upload_mode: bool) -> 
                   "The pipeline failed before it could start."
         hint = "Check the technical details below. If the problem persists, report it via the feedback form."
     fmt = {"source": source, "source_hint": source_hint}
-    errors = [l for l in lines if _is_error_line(l)]
+    details = list(dict.fromkeys(
+        l for l in lines if _is_error_line(l) or l.startswith("WARN metadata:")
+    ))
     return {
         "title": title,
         "message": message.format(**fmt),
         "hint": hint.format(**fmt),
         "step": failed_step,
-        "details": errors[-5:] or lines[-5:],
+        "details": details[-5:] or lines[-5:],
     }
 
 
