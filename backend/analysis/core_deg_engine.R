@@ -53,7 +53,10 @@ if (using_raw) {
   load_pkg("Biobase")
   cat("\nSTEP 1: Downloading GEO metadata...\n")
   gse_list <- tryCatch(
-    getGEO(geo_id, destdir=output_dir, getGPL=TRUE, AnnotGPL=TRUE),
+    # Platform annotation is optional for the analysis and can make this GEO
+    # metadata request fail even when the series itself is public. Fetch the
+    # series matrix first; supplementary files provide the expression data.
+    getGEO(geo_id, destdir=output_dir, getGPL=FALSE, AnnotGPL=FALSE),
     error=function(e){ cat("ERROR metadata:", conditionMessage(e), "\n"); quit(status=1) }
   )
   gse      <- gse_list[[1]]

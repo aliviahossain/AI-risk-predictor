@@ -230,6 +230,10 @@ class GEORequest(BaseModel):
 # to a plain-language explanation. The first rule whose pattern matches any
 # error or log line wins. "{source}" is replaced per mode (GEO vs upload).
 _FAILURE_RULES = [
+    (r"Could not resolve host|Could not resolve proxy|Timeout was reached|timed out|Connection (refused|reset)|Failed to connect|SSL (connect|certificate)|certificate verify failed",
+     "Could not reach NCBI GEO",
+     "The server lost its connection while downloading data from NCBI.",
+     "This is usually temporary. Please try again in a few minutes."),
     (r"finished without writing a results table",
      "No results were produced",
      "The pipeline finished, but did not write a results table.",
