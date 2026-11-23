@@ -3,7 +3,7 @@ services:
     name: online-omics
     runtime: docker
     plan: free
-    dockerfilePath: ./Dockerfile.web
+    dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
     envVars:

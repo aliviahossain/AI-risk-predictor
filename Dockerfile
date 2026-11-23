@@ -1,46 +1,39 @@
-FROM python:3.12-slim-bookworm
+# Full-stack Render image: React build, FastAPI, and the R analysis pipeline.
+FROM node:22-bookworm-slim AS build
+WORKDIR /src
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
 
+FROM python:3.12-slim-bookworm
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UPLOAD_DIR=/data/uploads \
-    PORT=8000
+    UPLOAD_DIR=/data/uploads
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential \
-        gfortran \
-        libcurl4-openssl-dev \
-        libfontconfig1-dev \
-        libfreetype6-dev \
-        libharfbuzz-dev \
-        libpng-dev \
-        libssl-dev \
-        libxml2-dev \
-        r-base \
-        r-base-dev \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg build-essential gfortran libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libpng-dev libssl-dev libxml2-dev r-base r-base-dev \
+    && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+    && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends caddy \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt \
-    && Rscript -e "install.packages('BiocManager', repos='https://cloud.r-project.org'); \
-        BiocManager::install(c('GEOquery', 'limma', 'edgeR', 'pheatmap', 'Biobase'), \
-        ask=FALSE, update=FALSE, Ncpus=2)"
+    && Rscript -e "install.packages('BiocManager', repos='https://cloud.r-project.org'); BiocManager::install(c('GEOquery', 'limma', 'edgeR', 'pheatmap', 'Biobase'), ask=FALSE, update=FALSE, Ncpus=2)"
 
 RUN useradd --create-home --uid 10001 app \
-    && mkdir -p /app/backend /data/uploads \
-    && chown -R app:app /app /data
-
+    && mkdir -p /app/backend /data/uploads /srv \
+    && chown -R app:app /app /data /srv
 WORKDIR /app/backend
 COPY --chown=app:app backend/main.py ./main.py
 COPY --chown=app:app backend/routes ./routes
 COPY --chown=app:app backend/analysis ./analysis
-
+COPY --from=build --chown=app:app /src/build /srv
+COPY Caddyfile /etc/caddy/Caddyfile
 USER app
-EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
-    CMD python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=3)" || exit 1
-
-# Only reachable through Caddy (compose `expose`, no published port), so trust its
-# X-Forwarded-For; otherwise every visitor shares Caddy's IP and one rate limit.
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]
+EXPOSE 10000
+ENTRYPOINT ["/bin/sh", "-c"]
+CMD ["uvicorn main:app --host 127.0.0.1 --port 8000 & exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"]
