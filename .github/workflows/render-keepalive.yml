@@ -3,7 +3,8 @@ name: Keep Render free service warm
 on:
   schedule:
     # Render Free services spin down after 15 minutes without inbound traffic.
-    - cron: "*/10 * * * *"
+    # Stagger away from the top of the hour, when GitHub Actions is busiest.
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 
 permissions:
