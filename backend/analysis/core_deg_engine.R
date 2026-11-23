@@ -51,12 +51,22 @@ if (using_raw) {
 } else {
   load_pkg("GEOquery")
   load_pkg("Biobase")
+  # Render's Linux image should use libcurl explicitly for HTTPS connections.
+  # GEOquery's "auto" selection can fail silently as "cannot open the connection".
+  options(download.file.method.GEOquery="libcurl", download.file.method="libcurl")
+  cat("  GEO download method: libcurl\n")
   cat("\nSTEP 1: Downloading GEO metadata...\n")
   gse_list <- tryCatch(
     # Platform annotation is optional for the analysis and can make this GEO
     # metadata request fail even when the series itself is public. Fetch the
     # series matrix first; supplementary files provide the expression data.
-    getGEO(geo_id, destdir=output_dir, getGPL=FALSE, AnnotGPL=FALSE),
+    withCallingHandlers(
+      getGEO(geo_id, destdir=output_dir, getGPL=FALSE, AnnotGPL=FALSE),
+      warning=function(w) {
+        cat("WARN metadata:", conditionMessage(w), "\n")
+        invokeRestart("muffleWarning")
+      }
+    ),
     error=function(e){ cat("ERROR metadata:", conditionMessage(e), "\n"); quit(status=1) }
   )
   gse      <- gse_list[[1]]
